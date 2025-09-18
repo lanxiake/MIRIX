@@ -7,10 +7,24 @@ Entry point for the Mirix application.
 import sys
 import argparse
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 配置日志
+logging.basicConfig(
+    level=logging.DEBUG,  # 改为DEBUG级别
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# 设置特定模块的日志级别为DEBUG
+logging.getLogger('mirix.server.fastapi_server').setLevel(logging.DEBUG)
+logging.getLogger('mirix.services.document_processor').setLevel(logging.DEBUG)
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -36,4 +50,4 @@ def main():
     uvicorn.run(app, host=args.host, port=port)
 
 if __name__ == "__main__":
-    main() 
+    main()

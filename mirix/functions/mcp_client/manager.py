@@ -227,7 +227,7 @@ class MCPClientManager:
         """Load and restore server configurations from disk"""
         if not os.path.exists(self.config_file):
             logger.debug("No persistent MCP server configurations found")
-            print("📝 No persistent MCP configurations found")
+            print("No persistent MCP configurations found")
             return
         
         try:
@@ -236,7 +236,7 @@ class MCPClientManager:
             
             if not configs_data:
                 logger.info("No MCP server configurations to restore")
-                print("📝 No MCP server configurations to restore")
+                print("No MCP server configurations to restore")
                 return
             
             logger.info(f"Loading {len(configs_data)} persistent MCP server configurations")

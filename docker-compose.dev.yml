@@ -1,0 +1,166 @@
+# Docker Compose 开发环境覆盖配置
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+
+
+services:
+  # 后端服务 - 开发模式
+  mirix-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: development  # 使用开发阶段
+    volumes:
+      # 挂载源代码以支持热重载
+      - ./src:/app/src:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      # 开发工具配置
+      - ./.env:/app/.env:ro
+      - ./pytest.ini:/app/pytest.ini:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    environment:
+      - DEBUG=true
+      - RELOAD=true
+      - LOG_LEVEL=DEBUG
+      - TESTING=false
+      - DEVELOPMENT=true
+    command: >
+      sh -c "
+        echo 'Starting backend in development mode...' &&
+        uvicorn src.main:app 
+        --host 0.0.0.0 
+        --port 8000 
+        --reload 
+        --reload-dir /app/src 
+        --log-level debug
+      "
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # debugpy 端口
+
+  # 前端服务 - 开发模式
+  mirix-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      target: development  # 使用开发阶段
+    volumes:
+      # 挂载源代码以支持热重载
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+      - ./frontend/package.json:/app/package.json:ro
+      - ./frontend/package-lock.json:/app/package-lock.json:ro
+      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
+      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
+      # 排除 node_modules
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+      - VITE_MCP_SSE_URL=http://localhost:8001
+      - CHOKIDAR_USEPOLLING=true  # 支持 Windows 文件监听
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+    ports:
+      - "3000:3000"
+      - "24678:24678"  # Vite HMR 端口
+
+  # MCP SSE 服务 - 开发模式
+  mirix-mcp-sse:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-sse
+      target: development  # 使用开发阶段
+    volumes:
+      # 挂载源代码以支持热重载
+      - ./mcp_sse_service:/app/mcp_sse_service:ro
+      - ./requirements-mcp-sse.txt:/app/requirements-mcp-sse.txt:ro
+      - ./.env:/app/.env:ro
+    environment:
+      - MCP_SSE_DEBUG=true
+      - MCP_SSE_LOG_LEVEL=DEBUG
+      - RELOAD=true
+    command: >
+      sh -c "
+        echo 'Starting MCP SSE service in development mode...' &&
+        uvicorn mcp_sse_service.main:app 
+        --host 0.0.0.0 
+        --port 8001 
+        --reload 
+        --reload-dir /app/mcp_sse_service 
+        --log-level debug
+      "
+    ports:
+      - "8001:8001"
+      - "5679:5679"  # debugpy 端口
+
+  # 数据库 - 开发模式
+  postgres:
+    environment:
+      - POSTGRES_DB=mirix_dev
+    volumes:
+      # 使用命名卷而不是绑定挂载，便于开发
+      - postgres_dev_data:/var/lib/postgresql/data
+      # 添加初始化脚本
+      - ./docker/init-dev.sql:/docker-entrypoint-initdb.d/init-dev.sql:ro
+    ports:
+      - "5432:5432"
+
+  # Redis - 开发模式
+  redis:
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+
+  # 开发工具服务
+  # pgAdmin - 数据库管理工具
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@mirix.dev
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_dev_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+  # Redis Commander - Redis 管理工具
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles:
+      - tools
+
+  # Mailhog - 邮件测试工具
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"  # SMTP 端口
+      - "8025:8025"  # Web UI 端口
+    profiles:
+      - tools
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  pgadmin_dev_data:
+    driver: local
+
+networks:
+  default:
+    name: mirix_dev_network

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import queuedFetch from '../utils/requestQueue';
 import './UploadExportModal.css';
 import { useTranslation } from 'react-i18next';
 
 function UploadExportModal({ isOpen, onClose, settings }) {
   const { t } = useTranslation();
+  const fileInputRef = useRef(null);
   const [selectedMemoryTypes, setSelectedMemoryTypes] = useState({
     episodic: true,
     semantic: true,
@@ -14,6 +15,11 @@ function UploadExportModal({ isOpen, onClose, settings }) {
   const [exportPath, setExportPath] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState(null);
+  
+  // 上传相关状态
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const memoryTypes = [
     { key: 'episodic', label: t('uploadExport.memoryTypes.episodic'), icon: '📚', description: t('uploadExport.memoryTypeDescriptions.episodic') },
@@ -49,8 +55,147 @@ function UploadExportModal({ isOpen, onClose, settings }) {
     }
   };
 
-  const handleUpload = () => {
-    alert(t('uploadExport.alerts.uploadNotImplemented'));
+  // 处理文件选择
+  const handleFileSelect = async () => {
+    // 检查是否在 Electron 环境中
+    if (window.electronAPI && window.electronAPI.selectFiles) {
+      // Electron 环境
+      try {
+        const result = await window.electronAPI.selectFiles({
+          title: t('uploadExport.descriptions.selectFilesTitle'),
+          filters: [
+            { name: 'Document Files', extensions: ['md', 'txt', 'xlsx', 'xls', 'docx', 'pdf'] },
+            { name: 'Markdown Files', extensions: ['md'] },
+            { name: 'Text Files', extensions: ['txt'] },
+            { name: 'Excel Files', extensions: ['xlsx', 'xls'] },
+            { name: 'All Files', extensions: ['*'] }
+          ],
+          properties: ['openFile', 'multiSelections']
+        });
+
+        if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+          setSelectedFiles(result.filePaths);
+        }
+      } catch (error) {
+        console.error('Error opening file dialog:', error);
+        alert(t('uploadExport.alerts.browserFailed'));
+      }
+    } else {
+      // Web 环境 - 使用 HTML file input
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+    }
+  };
+
+  // 处理 Web 环境的文件选择
+  const handleWebFileSelect = (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length > 0) {
+      setSelectedFiles(files);
+    }
+    // 清空 input 值，以便可以重新选择相同文件
+    event.target.value = '';
+  };
+
+  // 处理文件上传
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0) {
+      alert(t('uploadExport.alerts.noFilesSelected'));
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadStatus({ success: [], failed: [] });
+
+    for (const file of selectedFiles) {
+      try {
+        let fileContent;
+        let fileName;
+        
+        // 检查是否在 Electron 环境中
+        if (window.electronAPI && window.electronAPI.readFile) {
+          // Electron 环境 - file 是文件路径字符串
+          fileName = file.split(/[/\\]/).pop();
+          fileContent = await window.electronAPI.readFile(file);
+        } else {
+          // Web 环境 - file 是 File 对象
+          fileName = file.name;
+          fileContent = await readFileAsBase64(file);
+        }
+
+        const response = await queuedFetch('/api/documents/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            file_name: fileName,
+            file_type: fileName.split('.').pop().toLowerCase(),
+            content: fileContent,
+            user_id: null
+          }),
+        });
+
+        if (response.ok) {
+          setUploadStatus(prev => ({
+            ...prev,
+            success: [...prev.success, fileName]
+          }));
+        } else {
+          // 改进错误处理，处理非JSON响应
+          let errorMessage = 'Unknown error';
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorData.detail?.message || errorData.error || 'Unknown error';
+          } catch (jsonError) {
+            // 如果响应不是JSON格式，使用响应文本
+            const errorText = await response.text();
+            errorMessage = `Server error (${response.status}): ${errorText.substring(0, 100)}...`;
+            console.error('Failed to parse error response as JSON:', jsonError);
+            console.error('Raw error response:', errorText);
+          }
+          
+          setUploadStatus(prev => ({
+            ...prev,
+            failed: [...prev.failed, { fileName, error: errorMessage }]
+          }));
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        // 改进错误处理，提供更详细的错误信息
+        let errorMessage = 'Upload failed';
+        if (error.name === 'SyntaxError' && error.message.includes('JSON')) {
+          errorMessage = 'Server returned invalid response format';
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        const fileName = window.electronAPI && window.electronAPI.readFile 
+          ? file.split(/[/\\]/).pop() 
+          : file.name;
+        setUploadStatus(prev => ({
+          ...prev,
+          failed: [...prev.failed, { fileName, error: errorMessage }]
+        }));
+      }
+    }
+
+    setIsUploading(false);
+  };
+
+  // Web 环境下读取文件为 Base64
+  const readFileAsBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // 移除 data:xxx;base64, 前缀
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleExport = async () => {
@@ -166,12 +311,79 @@ function UploadExportModal({ isOpen, onClose, settings }) {
             <div className="upload-section">
               <h3>{t('uploadExport.sections.upload')}</h3>
               <p>{t('uploadExport.descriptions.uploadSection')}</p>
+              
+              {/* 文件选择区域 */}
+              <div className="file-selection-area">
+                {/* 隐藏的 file input 用于 Web 环境 */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  multiple
+                  accept=".md,.txt,.xlsx,.xls,.docx,.pdf"
+                  onChange={handleWebFileSelect}
+                />
+                
+                <button 
+                  className="file-select-btn"
+                  onClick={handleFileSelect}
+                  disabled={isUploading}
+                >
+                  📁 选择文件
+                </button>
+                
+                {selectedFiles.length > 0 && (
+                  <div className="selected-files">
+                    <h4>已选择的文件 ({selectedFiles.length}):</h4>
+                    <div className="file-list">
+                      {selectedFiles.map((file, index) => (
+                        <div key={index} className="file-item">
+                          <span className="file-name">
+                            {window.electronAPI && window.electronAPI.readFile 
+                              ? file.split(/[\\/]/).pop() 
+                              : file.name}
+                          </span>
+                          <button 
+                            className="remove-file-btn"
+                            onClick={() => setSelectedFiles(files => files.filter((_, i) => i !== index))}
+                            disabled={isUploading}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               <button 
                 className="upload-btn"
                 onClick={handleUpload}
+                disabled={isUploading || selectedFiles.length === 0}
               >
-                📤 {t('uploadExport.form.upload')}
+                {isUploading ? `⏳ 上传中...` : `📤 ${t('uploadExport.form.upload')}`}
               </button>
+              
+              {/* 上传状态显示 */}
+              {uploadStatus && (
+                <div className={`upload-status ${uploadStatus.success ? 'success' : 'error'}`}>
+                  <div className="status-message">{uploadStatus.message}</div>
+                  {uploadStatus.results && (
+                    <div className="upload-details">
+                      {uploadStatus.results.map((result, index) => (
+                        <div key={index} className={`file-result ${result.success ? 'success' : 'error'}`}>
+                          <span className="file-name">{result.fileName}</span>
+                          <span className="result-status">{result.success ? '✓' : '✗'}</span>
+                          {!result.success && (
+                            <span className="error-message">{result.message}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="export-section">
@@ -237,4 +449,4 @@ function UploadExportModal({ isOpen, onClose, settings }) {
   );
 }
 
-export default UploadExportModal; 
+export default UploadExportModal;

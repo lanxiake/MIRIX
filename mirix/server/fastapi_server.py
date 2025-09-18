@@ -18,9 +18,13 @@ from ..agent.agent_wrapper import AgentWrapper
 from ..functions.mcp_client import get_mcp_client_manager, StdioServerConfig
 from ..services.mcp_tool_registry import get_mcp_tool_registry
 from ..services.mcp_marketplace import get_mcp_marketplace
+from ..services.document_processor import DocumentProcessor
+from mirix.schemas.resource_memory import ResourceMemoryItem as PydanticResourceMemoryItem
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # 确保中间件日志能够显示
 
 # User context switching utilities
 def switch_user_context(agent_wrapper, user_id: str):
@@ -68,7 +72,7 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
     ]
     
     try:
-        print(f"🔐 Starting Gmail OAuth for {server_name}")
+        print(f"Starting Gmail OAuth for {server_name}")
         
         # Set up token file path (same pattern as original)
         token_file = os.path.expanduser("~/.mirix/gmail_token.json")
@@ -97,7 +101,7 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
             try:
                 creds = Credentials.from_authorized_user_file(token_file, SCOPES)
             except Exception as e:
-                print(f"🔄 Refreshing Gmail credentials (previous token expired)")
+                print(f"Refreshing Gmail credentials (previous token expired)")
                 os.remove(token_file)
                 creds = None
         
@@ -113,7 +117,7 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
             if not creds:
                 flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
                 
-                print("\n🔐 Starting OAuth authentication...")
+                print("\nStarting OAuth authentication...")
                 print("Opening browser for Google authentication...")
                 
                 # Try specific ports that match redirect URIs - EXACT same logic
@@ -132,10 +136,10 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
         
         # Build the Gmail service - EXACT same logic
         service = build('gmail', 'v1', credentials=creds)
-        print("✅ Successfully authenticated with Gmail API")
+        print("Successfully authenticated with Gmail API")
         
         # Gmail service built successfully - ready for email sending
-        print("✅ Gmail API connected successfully")
+        print("Gmail API connected successfully")
         
         # Now create the MCP client and add it to the manager
         from ..functions.mcp_client import GmailServerConfig, get_mcp_client_manager, GmailMCPClient
@@ -161,11 +165,11 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
         # Save configuration to disk for persistence (this was missing!)
         mcp_manager._save_persistent_connections()
         
-        print(f"✅ Gmail MCP client added to manager as '{server_name}' and saved to disk")
+        print(f"Gmail MCP client added to manager as '{server_name}' and saved to disk")
         return True
         
     except Exception as e:
-        print(f"❌ Error in Gmail OAuth flow: {str(e)}")
+        print(f"Error in Gmail OAuth flow: {str(e)}")
         logger.error(f"Gmail connection error: {str(e)}")
         return False
 
@@ -218,6 +222,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 添加请求日志中间件
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start_time = time.time()
+    print(f"[MIDDLEWARE DEBUG] 收到请求: {request.method} {request.url}")  # 使用print确保输出
+    logger.info(f"收到请求: {request.method} {request.url}")
+    logger.info(f"请求头: {dict(request.headers)}")
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    print(f"[MIDDLEWARE DEBUG] 请求完成: {request.method} {request.url} - 状态码: {response.status_code} - 耗时: {process_time:.4f}s")  # 使用print确保输出
+    logger.info(f"请求完成: {request.method} {request.url} - 状态码: {response.status_code} - 耗时: {process_time:.4f}s")
+    
+    return response
+
 def register_mcp_tools_for_restored_connections():
     """Register tools for MCP connections that were restored on startup"""
     try:
@@ -254,18 +274,17 @@ def register_mcp_tools_for_restored_connections():
     except Exception as e:
         logger.error(f"Error re-registering MCP tools: {str(e)}")
 
-@app.on_event("startup")
-async def startup_event():
+async def startup_event_mcp():
     """Initialize and restore MCP connections on startup"""
     try:
         logger.info("Starting up Mirix FastAPI server...")
         
         # Initialize the MCP client manager (this will auto-restore connections)
-        print("🚀 Initializing MCP client manager...")
+        print("Initializing MCP client manager...")
         mcp_manager = get_mcp_client_manager()
         connected_servers = mcp_manager.list_servers()
         logger.info(f"MCP client manager initialized with {len(connected_servers)} restored connections: {connected_servers}")
-        print(f"🔄 MCP Manager: Restored {len(connected_servers)} connections: {connected_servers}")
+        print(f"MCP Manager: Restored {len(connected_servers)} connections: {connected_servers}")
         
         # Debug: Check if the configuration file exists
         import os
@@ -274,9 +293,9 @@ async def startup_event():
             with open(config_file, 'r') as f:
                 import json
                 configs = json.load(f)
-                print(f"📋 Found MCP config file with {len(configs)} entries: {list(configs.keys())}")
+                print(f"Found MCP config file with {len(configs)} entries: {list(configs.keys())}")
         else:
-            print(f"📋 No MCP config file found at {config_file}")
+            print(f"No MCP config file found at {config_file}")
         
         # Tool registration will happen later when agent is available
         
@@ -289,6 +308,8 @@ agent = None
 confirmation_queues = {}
 # Flag to track if MCP tools have been registered for restored connections
 _mcp_tools_registered = False
+# Global document processor instance
+document_processor = DocumentProcessor()
 
 class MessageRequest(BaseModel):
     message: Optional[str] = None
@@ -489,28 +510,78 @@ class ReflexionResponse(BaseModel):
     message: str
     processing_time: Optional[float] = None
 
+# 文档上传相关的模型定义
+class UploadDocumentRequest(BaseModel):
+    """文档上传请求模型"""
+    file_name: str
+    file_type: str
+    content: str  # Base64编码的文件内容
+    user_id: Optional[str] = None
+
+class UploadDocumentResponse(BaseModel):
+    """文档上传响应模型"""
+    success: bool
+    message: str
+    document_id: Optional[str] = None
+    processed_content: Optional[Dict[str, Any]] = None
+
+class ProcessedDocumentInfo(BaseModel):
+    """处理后的文档信息"""
+    file_name: str
+    file_type: str
+    summary: str
+    word_count: Optional[int] = None
+    processed_at: str
+
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the agent when the server starts"""
+    """Initialize the agent and MCP connections when the server starts"""
     global agent
     
-    # Handle PyInstaller bundled resources
-    import sys
-    import os
-    from pathlib import Path
-    
-    if getattr(sys, 'frozen', False):
-        # Running in PyInstaller bundle
-        bundle_dir = Path(sys._MEIPASS)
-        config_path = bundle_dir / 'mirix' / 'configs' / 'mirix_monitor.yaml'
-    else:
-        # Running in development
-        config_path = Path('mirix/configs/mirix_monitor.yaml')
-    
-    agent = AgentWrapper(str(config_path))
-    print("Agent initialized successfully")
+    try:
+        # Initialize the agent first
+        import sys
+        import os
+        from pathlib import Path
+        
+        if getattr(sys, 'frozen', False):
+            # Running in PyInstaller bundle
+            bundle_dir = Path(sys._MEIPASS)
+            config_path = bundle_dir / 'mirix' / 'configs' / 'mirix_monitor.yaml'
+        else:
+            # Running in development
+            config_path = Path('mirix/configs/mirix_monitor.yaml')
+        
+        agent = AgentWrapper(str(config_path))
+        print("Agent initialized successfully")
+        
+        # Initialize MCP connections
+        logger.info("Starting up Mirix FastAPI server...")
+        
+        # Initialize the MCP client manager (this will auto-restore connections)
+        print("Initializing MCP client manager...")
+        mcp_manager = get_mcp_client_manager()
+        connected_servers = mcp_manager.list_servers()
+        logger.info(f"MCP client manager initialized with {len(connected_servers)} restored connections: {connected_servers}")
+        print(f"MCP Manager: Restored {len(connected_servers)} connections: {connected_servers}")
+        
+        # Debug: Check if the configuration file exists
+        config_file = os.path.expanduser("~/.mirix/mcp_connections.json")
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                import json
+                configs = json.load(f)
+                print(f"Found MCP config file with {len(configs)} entries: {list(configs.keys())}")
+        else:
+            print(f"No MCP config file found at {config_file}")
+        
+        # Tool registration will happen later when agent is available
+        
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        print(f"Startup error: {str(e)}")
 
 @app.get("/health")
 async def health_check():
@@ -1778,7 +1849,7 @@ async def connect_mcp_server(request: dict):
                     actor=agent.client.user
                 )
 
-                print(f"✅ Added MCP tool '{server_listing.id}' to agent '{agent.agent_states.agent_state.name}'")
+                print(f"Added MCP tool '{server_listing.id}' to agent '{agent.agent_states.agent_state.name}'")
                 
             return {
                 "success": True,
@@ -1843,7 +1914,7 @@ async def disconnect_mcp_server(request: dict):
                     tool_ids=updated_tool_ids,
                     actor=agent.client.user
                 )
-                print(f"✅ Removed MCP tool '{server_id}' and {len(unregistered_tool_ids)} associated tools from agent '{agent.agent_states.agent_state.name}'")
+                print(f"Removed MCP tool '{server_id}' and {len(unregistered_tool_ids)} associated tools from agent '{agent.agent_states.agent_state.name}'")
         
         return {
             "success": True,
@@ -1977,6 +2048,281 @@ async def create_user(request: CreateUserRequest):
             success=False,
             message=f"Error creating user: {str(e)}"
         )
+
+@app.post("/documents/upload", response_model=UploadDocumentResponse)
+async def upload_document(request: UploadDocumentRequest):
+    """
+    上传文档并处理为记忆数据
+    支持markdown、txt、excel等格式
+    集成MCP服务进行文档处理和记忆存储
+    """
+    print(f"DEBUG: Starting document upload for {request.file_name}")
+    logger.info(f"=== 文档上传请求开始 ===")
+    logger.info(f"文件名: {request.file_name}")
+    logger.info(f"文件类型: {request.file_type}")
+    logger.info(f"用户ID: {request.user_id}")
+    logger.info(f"内容长度: {len(request.content) if request.content else 0}")
+    
+    if agent is None:
+        logger.error("Agent未初始化")
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        logger.info(f"开始处理文档上传: {request.file_name}")
+        
+        # 解码Base64内容
+        try:
+            file_content = base64.b64decode(request.content)
+            logger.info(f"Base64解码成功，内容长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"Base64解码失败: {e}")
+            raise HTTPException(status_code=400, detail="文件内容解码失败")
+        
+        # 检查文件格式是否支持
+        if not document_processor.is_supported_format(request.file_name):
+            supported_formats = list(document_processor.SUPPORTED_FORMATS.keys())
+            raise HTTPException(
+                status_code=400, 
+                detail=f"不支持的文件格式。支持的格式: {', '.join(supported_formats)}"
+            )
+        
+        # 处理文档
+        logger.info(f"开始处理文档: {request.file_name}")
+        processed_doc = document_processor.process_document(
+            file_path=request.file_name,
+            content=file_content
+        )
+        
+        logger.info(f"文档处理完成: {processed_doc['file_name']}")
+        
+        # 获取当前用户
+        logger.info("获取当前用户信息")
+        current_user = get_user_or_default(agent, request.user_id)
+        if not current_user:
+            logger.error("无法获取用户信息")
+            raise HTTPException(status_code=400, detail="无法获取用户信息")
+        
+        logger.info(f"用户信息获取成功: user_id={current_user.id}, org_id={current_user.organization_id}")
+        
+        # 提取文本内容用于存储到记忆系统
+        text_content = document_processor.extract_text_content(processed_doc)
+        logger.info(f"提取文本内容成功，长度: {len(text_content)}")
+        
+        # 尝试使用MCP服务进行文档处理和记忆存储
+        mcp_result = None
+        try:
+            from mirix.functions.mcp_client import get_mcp_client_manager
+            mcp_manager = get_mcp_client_manager()
+            
+            if mcp_manager and len(mcp_manager.list_servers()) > 0:
+                logger.info("尝试使用MCP服务处理文档")
+                
+                # 准备MCP工具调用参数
+                mcp_args = {
+                    "file_name": processed_doc['file_name'],
+                    "file_type": processed_doc['file_type'],
+                    "content": text_content,
+                    "summary": processed_doc.get('summary', ''),
+                    "metadata": processed_doc
+                }
+                
+                # 尝试调用文档处理相关的MCP工具
+                # 首先尝试查找文档处理工具
+                doc_processing_tools = ["process_document", "store_document", "analyze_document"]
+                for tool_name in doc_processing_tools:
+                    try:
+                        result = mcp_manager.find_tool(tool_name)
+                        if result:
+                            server_name, tool = result
+                            logger.info(f"找到MCP文档处理工具: {server_name}.{tool_name}")
+                            mcp_result_text, is_error = mcp_manager.execute_tool(server_name, tool_name, mcp_args)
+                            if not is_error:
+                                mcp_result = mcp_result_text
+                                logger.info(f"MCP工具处理成功: {tool_name}")
+                                break
+                            else:
+                                logger.warning(f"MCP工具执行失败: {tool_name}, 错误: {mcp_result_text}")
+                    except Exception as e:
+                        logger.warning(f"MCP工具调用异常: {tool_name}, 错误: {str(e)}")
+                        continue
+                
+                # 如果没有找到专门的文档处理工具，尝试使用记忆存储工具
+                if not mcp_result:
+                    memory_tools = ["store_memory", "add_memory", "create_memory"]
+                    for tool_name in memory_tools:
+                        try:
+                            result = mcp_manager.find_tool(tool_name)
+                            if result:
+                                server_name, tool = result
+                                logger.info(f"找到MCP记忆存储工具: {server_name}.{tool_name}")
+                                memory_args = {
+                                    "title": processed_doc['file_name'],
+                                    "content": text_content,
+                                    "type": "document",
+                                    "metadata": processed_doc
+                                }
+                                mcp_result_text, is_error = mcp_manager.execute_tool(server_name, tool_name, memory_args)
+                                if not is_error:
+                                    mcp_result = mcp_result_text
+                                    logger.info(f"MCP记忆工具处理成功: {tool_name}")
+                                    break
+                                else:
+                                    logger.warning(f"MCP记忆工具执行失败: {tool_name}, 错误: {mcp_result_text}")
+                        except Exception as e:
+                            logger.warning(f"MCP记忆工具调用异常: {tool_name}, 错误: {str(e)}")
+                            continue
+                            
+        except Exception as e:
+            logger.warning(f"MCP服务调用失败，将使用默认处理方式: {str(e)}")
+        
+        # 存储到资源记忆系统（无论MCP是否成功都执行）
+        resource_manager = agent.client.server.resource_memory_manager
+
+        # 调试信息：检查resource_manager的类型和方法
+        logger.info(f"DEBUG: resource_manager type: {type(resource_manager)}")
+        logger.info(f"DEBUG: resource_manager class: {resource_manager.__class__}")
+        logger.info(f"DEBUG: has create_resource: {hasattr(resource_manager, 'create_resource')}")
+        logger.info(f"DEBUG: has create_item: {hasattr(resource_manager, 'create_item')}")
+        if hasattr(resource_manager, 'create_resource'):
+            logger.info(f"DEBUG: create_resource method: {resource_manager.create_resource}")
+        logger.info(f"DEBUG: available methods: {[m for m in dir(resource_manager) if not m.startswith('_')]}")
+
+        # 创建资源记忆项
+        from mirix.schemas.resource_memory import ResourceMemoryItem as PydanticResourceMemoryItem
+        item_data = PydanticResourceMemoryItem(
+            title=processed_doc['file_name'],
+            content=text_content,
+            resource_type=processed_doc['file_type'],
+            summary=processed_doc.get('summary', ''),
+            metadata_=processed_doc,
+            tree_path=[],  # 添加必需的tree_path字段
+            user_id=current_user.id,  # 添加必需的user_id字段
+            organization_id=current_user.organization_id  # 使用用户的organization_id
+        )
+        resource_item = resource_manager.create_item(
+            item_data=item_data,
+            actor=current_user
+        )
+        
+        logger.info(f"文档已存储到记忆系统: {resource_item.id}")
+        
+        # 构建响应消息
+        success_message = f"文档 '{request.file_name}' 上传并处理成功"
+        if mcp_result:
+            success_message += f"，MCP服务处理结果: {mcp_result[:100]}..."
+        
+        return UploadDocumentResponse(
+            success=True,
+            message=success_message,
+            document_id=resource_item.id,
+            processed_content={
+                "file_name": processed_doc['file_name'],
+                "file_type": processed_doc['file_type'],
+                "summary": processed_doc.get('summary', ''),
+                "word_count": processed_doc.get('word_count'),
+                "processed_at": processed_doc.get('processed_at'),
+                "mcp_processed": mcp_result is not None
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文档上传处理失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        # 确保返回正确的JSON响应，而不是抛出HTTPException
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "success": False,
+                "message": f"文档处理失败: {str(e)}",
+                "error_type": "processing_error"
+            }
+        )
+
+@app.post("/documents/upload_file")
+async def upload_document_file(
+    file: UploadFile = File(...),
+    user_id: Optional[str] = Form(None)
+):
+    """
+    通过文件上传接口上传文档
+    支持multipart/form-data格式
+    """
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        logger.info(f"开始处理文件上传: {file.filename}")
+        
+        # 检查文件格式是否支持
+        if not document_processor.is_supported_format(file.filename):
+            supported_formats = list(document_processor.SUPPORTED_FORMATS.keys())
+            raise HTTPException(
+                status_code=400, 
+                detail=f"不支持的文件格式。支持的格式: {', '.join(supported_formats)}"
+            )
+        
+        # 读取文件内容
+        file_content = await file.read()
+        
+        # 处理文档
+        processed_doc = document_processor.process_document(
+            file_path=file.filename,
+            content=file_content
+        )
+        
+        logger.info(f"文档处理完成: {processed_doc['file_name']}")
+        
+        # 获取当前用户
+        current_user = get_user_or_default(agent, user_id)
+        if not current_user:
+            raise HTTPException(status_code=400, detail="无法获取用户信息")
+        
+        # 提取文本内容用于存储到记忆系统
+        text_content = document_processor.extract_text_content(processed_doc)
+        
+        # 存储到资源记忆系统
+        resource_manager = agent.client.server.resource_memory_manager
+        
+        # 创建资源记忆项
+        from mirix.schemas.resource_memory import ResourceMemoryItem as PydanticResourceMemoryItem
+        item_data = PydanticResourceMemoryItem(
+            title=processed_doc['file_name'],
+            content=text_content,
+            resource_type=processed_doc['file_type'],
+            summary=processed_doc.get('summary', ''),
+            metadata_=processed_doc,
+            tree_path=[],  # 添加必需的tree_path字段
+            user_id=current_user.id,  # 添加必需的user_id字段
+            organization_id=current_user.organization_id  # 修复：使用正确的organization_id
+        )
+        resource_item = resource_manager.create_item(
+            item_data=item_data,
+            actor=current_user
+        )
+        
+        logger.info(f"文档已存储到记忆系统: {resource_item.id}")
+        
+        return {
+            "success": True,
+            "message": f"文档 '{file.filename}' 上传并处理成功",
+            "document_id": resource_item.id,
+            "processed_content": {
+                "file_name": processed_doc['file_name'],
+                "file_type": processed_doc['file_type'],
+                "summary": processed_doc.get('summary', ''),
+                "word_count": processed_doc.get('word_count'),
+                "processed_at": processed_doc.get('processed_at')
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件上传处理失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"文件处理失败: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

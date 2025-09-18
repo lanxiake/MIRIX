@@ -235,7 +235,7 @@ class AgentWrapper():
             self.uri_to_create_time = {}
             self.upload_manager = None
 
-        print(f"🔄 Initializing model: {self.model_name}")
+        print(f"Initializing model: {self.model_name}")
 
         self.set_model(self.model_name)
         self.set_memory_model(self.model_name)
@@ -309,7 +309,7 @@ class AgentWrapper():
         from mirix.settings import settings
         
         folder = Path(folder_path)
-        print(f"🔄 Restoring database from {folder_path} before agent initialization...")
+        print(f"Restoring database from {folder_path} before agent initialization...")
         
         try:
             # Check if folder exists
@@ -372,7 +372,7 @@ class AgentWrapper():
                         str(compressed_backup)
                     ]
                 elif sql_backup.exists():
-                    print("📝 Restoring from SQL backup...")
+                    print("Restoring from SQL backup...")
                     restore_cmd = [
                         'psql',
                         '-h', str(db_host),
@@ -395,7 +395,7 @@ class AgentWrapper():
                     else:
                         raise RuntimeError(f"PostgreSQL restore failed: {stderr_text}")
                 
-                print("✅ PostgreSQL database restored successfully!")
+                print("PostgreSQL database restored successfully!")
                 
             # Handle SQLite restoration
             elif backup_type == 'sqlite':
@@ -414,7 +414,7 @@ class AgentWrapper():
                 import os
                 os.chmod(sqlite_dest, 0o666)  # Make it writable
                 
-                print("✅ SQLite database restored successfully!")
+                print("SQLite database restored successfully!")
                 
         except Exception as e:
             print(f"❌ Database restoration failed: {str(e)}")

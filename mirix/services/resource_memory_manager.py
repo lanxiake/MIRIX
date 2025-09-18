@@ -30,6 +30,12 @@ class ResourceMemoryManager:
         from mirix.server.server import db_context
         self.session_maker = db_context
 
+    def __getattr__(self, name):
+        """确保create_resource属性总是可用"""
+        if name == 'create_resource':
+            return self.create_item
+        raise AttributeError(f"'ResourceMemoryManager' object has no attribute '{name}'")
+
     def _clean_text_for_search(self, text: str) -> str:
         """
         Clean text by removing punctuation and normalizing whitespace.
@@ -352,12 +358,12 @@ class ResourceMemoryManager:
     @enforce_types
     def create_item(self, item_data: PydanticResourceMemoryItem, actor: PydanticUser) -> PydanticResourceMemoryItem:
         """Create a new resource memory item."""
-        
+
         # Ensure ID is set before model_dump
         if not item_data.id:
             from mirix.utils import generate_unique_short_id
             item_data.id = generate_unique_short_id(self.session_maker, ResourceMemoryItem, "res")
-        
+
         data_dict = item_data.model_dump()
 
         # Validate required fields
@@ -367,7 +373,7 @@ class ResourceMemoryManager:
                 raise ValueError(f"Required field '{field}' missing from resource memory data")
 
         data_dict.setdefault("metadata_", {})
-        
+
         # Set user_id from actor for multi-user support
         data_dict["user_id"] = actor.id
 
@@ -375,6 +381,12 @@ class ResourceMemoryManager:
             item = ResourceMemoryItem(**data_dict)
             item.create(session)
             return item.to_pydantic()
+
+    @enforce_types
+    def create_resource(self, item_data: PydanticResourceMemoryItem, actor: PydanticUser) -> PydanticResourceMemoryItem:
+        """Create a new resource memory item (alias for create_item for backward compatibility)."""
+        # 强制重定向到create_item，确保100%兼容性
+        return self.create_item(item_data, actor)
 
     @enforce_types
     def update_item(self, item_update: ResourceMemoryItemUpdate, actor: PydanticUser) -> PydanticResourceMemoryItem:
