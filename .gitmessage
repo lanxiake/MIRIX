@@ -1,0 +1,30 @@
+# <类型>(<范围>): <主题>
+#
+# <详细描述>
+#
+# <页脚>
+
+# 提交类型 (Type):
+# feat     : 新增功能 (feature)
+# fix      : 修复 bug
+# docs     : 文档变更 (documentation)
+# style    : 代码格式化、不影响代码逻辑的更改
+# refactor : 代码重构，不引入新功能也不修复 bug
+# test     : 添加或修改测试
+# chore    : 构建过程或辅助工具的变动
+
+# 提交范围 (Scope - 可选):
+# frontend, backend, docs, mcp-sse-service, database, config, etc.
+
+# 主题 (Subject):
+# - 使用祈使句，例如 "add new feature" 而不是 "added new feature"
+# - 首字母小写
+# - 不超过 50 个字符
+# - 不以句号结尾
+
+# 详细描述 (Body - 可选):
+# - 每行不超过 72 个字符
+# - 解释本次提交的原因、解决了什么问题、引入了什么新功能等
+
+# 页脚 (Footer - 可选):
+# - 引用相关 issue 或 PR，例如 Fixes #123, Closes #456
