@@ -1,13 +1,13 @@
 """
 MCP SSE Server 核心实现
 
-实现MCP (Model Context Protocol) 协议的SSE (Server-Sent Events) 传输层。
+使用官方 MCP Python SDK 实现标准的 MCP (Model Context Protocol) 协议的 SSE (Server-Sent Events) 传输层。
 """
 
 import asyncio
 import json
 import uuid
-from typing import Dict, List, Optional, Any, AsyncGenerator
+from typing import Dict, List, Optional, Any, Sequence
 from datetime import datetime, timedelta
 
 import httpx
@@ -15,15 +15,19 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+# 导入官方 MCP SDK
+from mcp.server.fastmcp import FastMCP
+from mcp.types import Tool, Resource, Prompt, TextContent, ImageContent
+from mcp import types
+
 from .config import Settings, get_settings
 from .logging_config import LoggerMixin
-from .mcp_protocol import MCPMessage, MCPRequest, MCPResponse, MCPNotification
 from .mirix_client import MIRIXClient
 from .session_manager import SessionManager
 from .rate_limiter import RateLimiter
 
 class MCPSSEServer(LoggerMixin):
-    """MCP SSE服务器实现"""
+    """基于官方 MCP SDK 的 SSE 服务器实现"""
     
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -31,6 +35,16 @@ class MCPSSEServer(LoggerMixin):
         self.mirix_client = MIRIXClient(settings.mirix_backend_url, settings.mirix_backend_timeout)
         self.session_manager = SessionManager(settings)
         self.rate_limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window)
+        
+        # 创建 FastMCP 实例
+        self.mcp = FastMCP(
+            name="MIRIX MCP SSE Service"
+        )
+        
+        # 设置 MCP 服务器的工具、资源和提示
+        self._setup_mcp_handlers()
+        
+        # 设置路由
         self._setup_routes()
         
         # 服务器状态
@@ -46,6 +60,282 @@ class MCPSSEServer(LoggerMixin):
             }
         }
     
+    def _setup_mcp_handlers(self):
+        """设置 MCP 处理器 - 专注记忆管理功能"""
+        
+        # 记忆管理工具
+        @self.mcp.tool()
+        async def memory_add(
+            content: str,
+            memory_type: str,
+            context: Optional[str] = None
+        ) -> Dict[str, Any]:
+            """
+            添加记忆到 MIRIX 记忆系统
+            
+            使用场景：
+            - 用户分享个人信息、偏好或重要事实时使用
+            - 学习新知识或技能时，将关键信息存储起来
+            - 记录重要的对话内容或决定
+            - 保存工作流程、步骤说明等程序性知识
+            
+            执行顺序：通常是对话中的第一步，在获取到有价值信息后立即使用
+            预期效果：信息被永久存储，可通过 memory_search 检索，增强 AI 对用户的了解
+            """
+            try:
+                # 验证记忆类型
+                valid_types = ["core", "episodic", "semantic", "procedural", "resource", "knowledge_vault"]
+                if memory_type not in valid_types:
+                    return {
+                        "success": False,
+                        "error": f"Invalid memory_type. Must be one of: {', '.join(valid_types)}"
+                    }
+                
+                # 构建请求数据
+                request_data = {
+                    "content": content,
+                    "memory_type": memory_type,
+                    "user_id": self.settings.default_user_id
+                }
+                
+                if context:
+                    request_data["context"] = context
+                
+                # 调用 MIRIX 后端添加记忆
+                result = await self.mirix_client.add_memory(request_data)
+                
+                self.logger.info("Memory added successfully", 
+                               memory_type=memory_type, 
+                               content_length=len(content))
+                
+                return {
+                    "success": True,
+                    "message": "Memory added successfully",
+                    "memory_id": result.get("memory_id"),
+                    "memory_type": memory_type
+                }
+                
+            except Exception as e:
+                self.logger.error("Failed to add memory", 
+                                memory_type=memory_type, 
+                                error=str(e))
+                return {
+                    "success": False,
+                    "error": f"Failed to add memory: {str(e)}"
+                }
+        
+        @self.mcp.tool()
+        async def memory_search(
+            query: str,
+            memory_types: Optional[List[str]] = None,
+            limit: int = 10
+        ) -> Dict[str, Any]:
+            """
+            在用户记忆系统中搜索相关信息
+            
+            使用场景：
+            - 用户询问之前讨论过的话题时使用
+            - 需要回忆用户的偏好、习惯或个人信息时
+            - 查找相关的知识、经验或程序步骤
+            - 在回答问题前，先检索相关的背景信息
+            
+            执行顺序：通常在 memory_add 之前使用，避免重复存储；在回答用户问题前使用
+            预期效果：获取相关的历史信息，提供更个性化、连贯的回应
+            """
+            try:
+                # 验证记忆类型（如果提供）
+                if memory_types:
+                    valid_types = ["core", "episodic", "semantic", "procedural", "resource", "knowledge_vault"]
+                    invalid_types = [t for t in memory_types if t not in valid_types]
+                    if invalid_types:
+                        return {
+                            "success": False,
+                            "error": f"Invalid memory_types: {', '.join(invalid_types)}. Must be one of: {', '.join(valid_types)}"
+                        }
+                
+                # 构建搜索请求
+                search_data = {
+                    "query": query,
+                    "user_id": self.settings.default_user_id,
+                    "limit": min(limit, 50)  # 限制最大返回数量
+                }
+                
+                if memory_types:
+                    search_data["memory_types"] = memory_types
+                
+                # 调用 MIRIX 后端搜索记忆
+                results = await self.mirix_client.search_memory(search_data)
+                
+                self.logger.info("Memory search completed", 
+                               query=query, 
+                               results_count=len(results.get("memories", [])))
+                
+                return {
+                    "success": True,
+                    "query": query,
+                    "memories": results.get("memories", []),
+                    "total_count": results.get("total_count", 0)
+                }
+                
+            except Exception as e:
+                self.logger.error("Failed to search memory", 
+                                query=query, 
+                                error=str(e))
+                return {
+                    "success": False,
+                    "error": f"Failed to search memory: {str(e)}"
+                }
+        
+        @self.mcp.tool()
+        async def memory_chat(
+            message: str,
+            memorizing: bool = True,
+            image_uris: Optional[List[str]] = None
+        ) -> Dict[str, Any]:
+            """
+            发送消息给 MIRIX Agent 并自动管理记忆
+            
+            使用场景：
+            - 进行需要记忆上下文的深度对话
+            - 讨论重要话题，希望 AI 记住关键信息
+            - 获取基于个人记忆的个性化回应
+            - 当需要 AI 学习和适应用户偏好时
+            
+            执行顺序：可以独立使用，或在 memory_search 后使用以提供更好的上下文
+            预期效果：获得个性化回应，重要信息自动存储到记忆中
+            """
+            try:
+                # 构建消息请求
+                chat_data = {
+                    "message": message,
+                    "user_id": self.settings.default_user_id,
+                    "memorizing": memorizing,
+                    "model": self.settings.ai_model
+                }
+                
+                if image_uris:
+                    chat_data["image_uris"] = image_uris
+                
+                # 调用 MIRIX 后端进行对话
+                response = await self.mirix_client.send_chat_message(chat_data)
+                
+                self.logger.info("Memory chat completed", 
+                               message_length=len(message), 
+                               memorizing=memorizing,
+                               has_images=bool(image_uris))
+                
+                return {
+                    "success": True,
+                    "response": response.get("response", ""),
+                    "memorized": response.get("memorized", False),
+                    "memory_updates": response.get("memory_updates", [])
+                }
+                
+            except Exception as e:
+                self.logger.error("Failed to process memory chat", 
+                                message_length=len(message), 
+                                error=str(e))
+                return {
+                    "success": False,
+                    "error": f"Failed to process chat: {str(e)}"
+                }
+        
+        @self.mcp.tool()
+        async def memory_get_profile(
+            memory_types: Optional[List[str]] = None
+        ) -> Dict[str, Any]:
+            """
+            获取用户的完整记忆档案概览
+            
+            使用场景：
+            - 初次与用户交互时，了解用户背景
+            - 需要全面了解用户偏好和特点时
+            - 为用户提供个性化建议前的信息收集
+            - 定期回顾和更新对用户的了解
+            
+            执行顺序：通常在对话开始时使用，为后续交互提供基础
+            预期效果：获得用户的全面画像，包括个人信息、偏好、历史记录等
+            """
+            try:
+                # 验证记忆类型（如果提供）
+                if memory_types:
+                    valid_types = ["core", "episodic", "semantic", "procedural", "resource", "knowledge_vault"]
+                    invalid_types = [t for t in memory_types if t not in valid_types]
+                    if invalid_types:
+                        return {
+                            "success": False,
+                            "error": f"Invalid memory_types: {', '.join(invalid_types)}. Must be one of: {', '.join(valid_types)}"
+                        }
+                
+                # 构建档案请求
+                profile_data = {
+                    "user_id": self.settings.default_user_id
+                }
+                
+                if memory_types:
+                    profile_data["memory_types"] = memory_types
+                
+                # 调用 MIRIX 后端获取用户档案
+                profile = await self.mirix_client.get_user_profile(profile_data)
+                
+                self.logger.info("User profile retrieved", 
+                               user_id=self.settings.default_user_id,
+                               memory_types_count=len(profile.get("memory_summary", {})))
+                
+                return {
+                    "success": True,
+                    "user_id": self.settings.default_user_id,
+                    "profile": profile.get("profile", {}),
+                    "memory_summary": profile.get("memory_summary", {}),
+                    "total_memories": profile.get("total_memories", 0),
+                    "last_updated": profile.get("last_updated")
+                }
+                
+            except Exception as e:
+                self.logger.error("Failed to get user profile", 
+                                user_id=self.settings.default_user_id, 
+                                error=str(e))
+                return {
+                    "success": False,
+                    "error": f"Failed to get user profile: {str(e)}"
+                }
+        
+        # 动态注册资源
+        @self.mcp.resource("mirix://status")
+        async def get_mirix_status() -> str:
+            """获取 MIRIX 后端状态"""
+            try:
+                status = await self.mirix_client.get_mcp_status()
+                return json.dumps(status, indent=2)
+            except Exception as e:
+                self.logger.error("Failed to get MIRIX status", error=str(e))
+                return json.dumps({"error": str(e)}, indent=2)
+        
+        @self.mcp.resource("mirix://tools")
+        async def get_mirix_tools_resource() -> str:
+            """获取 MIRIX 工具列表作为资源"""
+            try:
+                tools = await self.mirix_client.list_tools()
+                return json.dumps(tools, indent=2)
+            except Exception as e:
+                self.logger.error("Failed to get MIRIX tools resource", error=str(e))
+                return json.dumps({"error": str(e)}, indent=2)
+        
+        # 动态注册提示
+        @self.mcp.prompt()
+        async def mirix_system_prompt(context: str = "general") -> str:
+            """生成 MIRIX 系统提示"""
+            return f"""You are MIRIX, an AI assistant with access to various tools and resources.
+            
+Context: {context}
+
+Available capabilities:
+- Tool execution through MIRIX backend
+- Resource access and management
+- Dynamic prompt generation
+
+Please use the available tools and resources to help the user effectively."""
+    
     def _setup_routes(self):
         """设置路由"""
         
@@ -60,354 +350,33 @@ class MCPSSEServer(LoggerMixin):
                 "protocolVersion": self.server_info["protocolVersion"]
             }
         
-        @self.router.post("/connect")
-        async def connect_client(request: Request):
-            """建立MCP连接"""
-            client_ip = request.client.host
-            
-            # 速率限制检查
-            if not await self.rate_limiter.allow_request(client_ip):
-                raise HTTPException(status_code=429, detail="Rate limit exceeded")
-            
-            # 创建会话
-            session_id = str(uuid.uuid4())
-            session = await self.session_manager.create_session(session_id, client_ip)
-            
-            self.logger.info("New MCP client connected", session_id=session_id, client_ip=client_ip)
-            
+        # 健康检查端点
+        @self.router.get("/health")
+        async def health_check():
+            """健康检查端点"""
             return {
-                "session_id": session_id,
-                "server_info": self.server_info,
-                "sse_endpoint": f"/mcp/sse/{session_id}"
+                "status": "healthy",
+                "service": "mirix-mcp-sse",
+                "version": "0.1.0"
             }
         
-        @self.router.get("/sse/{session_id}")
-        async def sse_stream(session_id: str, request: Request):
-            """SSE流端点"""
-            # 验证会话
-            session = await self.session_manager.get_session(session_id)
-            if not session:
-                raise HTTPException(status_code=404, detail="Session not found")
-            
-            # 更新会话活动时间
-            await self.session_manager.update_session_activity(session_id)
-            
-            return StreamingResponse(
-                self._sse_generator(session_id, request),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",  # 禁用nginx缓冲
-                }
-            )
-        
-        @self.router.post("/message/{session_id}")
-        async def send_message(session_id: str, message: MCPMessage, request: Request):
-            """发送MCP消息"""
-            # 验证会话
-            session = await self.session_manager.get_session(session_id)
-            if not session:
-                raise HTTPException(status_code=404, detail="Session not found")
-            
-            # 速率限制检查
-            client_ip = request.client.host
-            if not await self.rate_limiter.allow_request(client_ip):
-                raise HTTPException(status_code=429, detail="Rate limit exceeded")
-            
-            # 处理消息
-            try:
-                await self._handle_mcp_message(session_id, message)
-                return {"status": "accepted"}
-            except Exception as e:
-                self.logger.error("Error handling MCP message", 
-                                session_id=session_id, error=str(e))
-                raise HTTPException(status_code=500, detail="Internal server error")
-        
-        @self.router.delete("/disconnect/{session_id}")
-        async def disconnect_client(session_id: str):
-            """断开MCP连接"""
-            await self.session_manager.remove_session(session_id)
-            self.logger.info("MCP client disconnected", session_id=session_id)
-            return {"status": "disconnected"}
+        # 服务信息端点
+        @self.router.get("/info")
+        async def server_info():
+            """服务器信息端点"""
+            return self.server_info
     
-    async def _sse_generator(self, session_id: str, request: Request) -> AsyncGenerator[str, None]:
-        """SSE事件生成器"""
-        try:
-            # 发送连接确认
-            yield self._format_sse_event("connected", {
-                "session_id": session_id,
-                "server_info": self.server_info
-            })
-            
-            # 获取会话消息队列
-            message_queue = await self.session_manager.get_message_queue(session_id)
-            
-            # 心跳任务
-            heartbeat_task = asyncio.create_task(
-                self._heartbeat_loop(session_id, self.settings.sse_heartbeat_interval)
-            )
-            
-            try:
-                while True:
-                    # 检查客户端是否断开连接
-                    if await request.is_disconnected():
-                        self.logger.info("Client disconnected", session_id=session_id)
-                        break
-                    
-                    try:
-                        # 等待消息或超时
-                        message = await asyncio.wait_for(
-                            message_queue.get(),
-                            timeout=1.0
-                        )
-                        
-                        # 发送消息
-                        yield self._format_sse_event("message", message)
-                        
-                        # 标记任务完成
-                        message_queue.task_done()
-                        
-                    except asyncio.TimeoutError:
-                        # 超时，继续循环
-                        continue
-                    
-            finally:
-                # 清理
-                heartbeat_task.cancel()
-                try:
-                    await heartbeat_task
-                except asyncio.CancelledError:
-                    pass
-                
-        except Exception as e:
-            self.logger.error("SSE stream error", session_id=session_id, error=str(e))
-            yield self._format_sse_event("error", {"error": str(e)})
-        
-        finally:
-            # 清理会话
-            await self.session_manager.remove_session(session_id)
-    
-    async def _heartbeat_loop(self, session_id: str, interval: int):
-        """心跳循环"""
-        while True:
-            try:
-                await asyncio.sleep(interval)
-                
-                # 检查会话是否仍然存在
-                session = await self.session_manager.get_session(session_id)
-                if not session:
-                    break
-                
-                # 发送心跳到消息队列
-                message_queue = await self.session_manager.get_message_queue(session_id)
-                await message_queue.put({
-                    "type": "heartbeat",
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.logger.error("Heartbeat error", session_id=session_id, error=str(e))
-    
-    def _format_sse_event(self, event_type: str, data: Any, event_id: Optional[str] = None) -> str:
-        """格式化SSE事件"""
-        lines = []
-        
-        if event_id:
-            lines.append(f"id: {event_id}")
-        
-        lines.append(f"event: {event_type}")
-        lines.append(f"data: {json.dumps(data, ensure_ascii=False)}")
-        lines.append(f"retry: {self.settings.sse_retry_interval}")
-        lines.append("")  # 空行表示事件结束
-        
-        return "\n".join(lines) + "\n"
-    
-    async def _handle_mcp_message(self, session_id: str, message: MCPMessage):
-        """处理MCP消息"""
-        self.logger.debug("Handling MCP message", 
-                         session_id=session_id, 
-                         message_type=message.method if hasattr(message, 'method') else 'response')
-        
-        # 根据消息类型处理
-        if isinstance(message, MCPRequest):
-            await self._handle_mcp_request(session_id, message)
-        elif isinstance(message, MCPResponse):
-            await self._handle_mcp_response(session_id, message)
-        elif isinstance(message, MCPNotification):
-            await self._handle_mcp_notification(session_id, message)
-        else:
-            self.logger.warning("Unknown MCP message type", 
-                              session_id=session_id, 
-                              message=message)
-    
-    async def _handle_mcp_request(self, session_id: str, request: MCPRequest):
-        """处理MCP请求"""
-        try:
-            # 根据方法类型处理
-            if request.method == "initialize":
-                response = await self._handle_initialize(session_id, request)
-            elif request.method == "tools/list":
-                response = await self._handle_tools_list(session_id, request)
-            elif request.method == "tools/call":
-                response = await self._handle_tools_call(session_id, request)
-            elif request.method == "resources/list":
-                response = await self._handle_resources_list(session_id, request)
-            elif request.method == "resources/read":
-                response = await self._handle_resources_read(session_id, request)
-            elif request.method == "prompts/list":
-                response = await self._handle_prompts_list(session_id, request)
-            elif request.method == "prompts/get":
-                response = await self._handle_prompts_get(session_id, request)
-            else:
-                # 未知方法
-                response = MCPResponse(
-                    id=request.id,
-                    error={
-                        "code": -32601,
-                        "message": f"Method not found: {request.method}"
-                    }
-                )
-            
-            # 发送响应
-            await self._send_message_to_session(session_id, response.dict())
-            
-        except Exception as e:
-            self.logger.error("Error handling MCP request", 
-                            session_id=session_id, 
-                            method=request.method, 
-                            error=str(e))
-            
-            # 发送错误响应
-            error_response = MCPResponse(
-                id=request.id,
-                error={
-                    "code": -32603,
-                    "message": "Internal error",
-                    "data": str(e)
-                }
-            )
-            await self._send_message_to_session(session_id, error_response.dict())
-    
-    async def _handle_initialize(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理初始化请求"""
-        # 获取MIRIX的能力信息
-        capabilities = await self.mirix_client.get_capabilities()
-        
-        # 更新服务器信息
-        self.server_info["capabilities"] = capabilities
-        
-        return MCPResponse(
-            id=request.id,
-            result={
-                "protocolVersion": self.server_info["protocolVersion"],
-                "capabilities": capabilities,
-                "serverInfo": {
-                    "name": self.server_info["name"],
-                    "version": self.server_info["version"]
-                }
-            }
-        )
-    
-    async def _handle_tools_list(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理工具列表请求"""
-        tools = await self.mirix_client.list_tools()
-        
-        return MCPResponse(
-            id=request.id,
-            result={"tools": tools}
-        )
-    
-    async def _handle_tools_call(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理工具调用请求"""
-        tool_name = request.params.get("name")
-        arguments = request.params.get("arguments", {})
-        
-        # 调用MIRIX工具
-        result = await self.mirix_client.call_tool(tool_name, arguments)
-        
-        return MCPResponse(
-            id=request.id,
-            result=result
-        )
-    
-    async def _handle_resources_list(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理资源列表请求"""
-        resources = await self.mirix_client.list_resources()
-        
-        return MCPResponse(
-            id=request.id,
-            result={"resources": resources}
-        )
-    
-    async def _handle_resources_read(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理资源读取请求"""
-        uri = request.params.get("uri")
-        
-        # 读取MIRIX资源
-        content = await self.mirix_client.read_resource(uri)
-        
-        return MCPResponse(
-            id=request.id,
-            result={"contents": [content]}
-        )
-    
-    async def _handle_prompts_list(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理提示列表请求"""
-        prompts = await self.mirix_client.list_prompts()
-        
-        return MCPResponse(
-            id=request.id,
-            result={"prompts": prompts}
-        )
-    
-    async def _handle_prompts_get(self, session_id: str, request: MCPRequest) -> MCPResponse:
-        """处理提示获取请求"""
-        name = request.params.get("name")
-        arguments = request.params.get("arguments", {})
-        
-        # 获取MIRIX提示
-        prompt = await self.mirix_client.get_prompt(name, arguments)
-        
-        return MCPResponse(
-            id=request.id,
-            result=prompt
-        )
-    
-    async def _handle_mcp_response(self, session_id: str, response: MCPResponse):
-        """处理MCP响应"""
-        # 响应通常是对之前请求的回复，这里可以做一些处理
-        self.logger.debug("Received MCP response", 
-                         session_id=session_id, 
-                         response_id=response.id)
-    
-    async def _handle_mcp_notification(self, session_id: str, notification: MCPNotification):
-        """处理MCP通知"""
-        self.logger.debug("Received MCP notification", 
-                         session_id=session_id, 
-                         method=notification.method)
-        
-        # 根据通知类型处理
-        if notification.method == "notifications/initialized":
-            # 客户端初始化完成
-            await self.session_manager.mark_session_initialized(session_id)
-        elif notification.method == "notifications/cancelled":
-            # 请求被取消
-            pass
-        # 可以添加更多通知类型的处理
-    
-    async def _send_message_to_session(self, session_id: str, message: Dict[str, Any]):
-        """向会话发送消息"""
-        message_queue = await self.session_manager.get_message_queue(session_id)
-        await message_queue.put(message)
+    def get_sse_app(self):
+        """获取 SSE ASGI 应用"""
+        # 使用官方 MCP SDK 的 SSE 应用，不指定 mount_path 参数
+        # 因为我们在 main.py 中已经将其挂载到 /sse 路径
+        return self.mcp.sse_app()
     
     async def startup(self):
-        """服务启动"""
+        """启动服务"""
         self.logger.info("Starting MCP SSE Server")
         
-        # 初始化MIRIX客户端
+        # 启动 MIRIX 客户端
         await self.mirix_client.initialize()
         
         # 启动会话管理器
@@ -416,13 +385,13 @@ class MCPSSEServer(LoggerMixin):
         self.logger.info("MCP SSE Server started successfully")
     
     async def shutdown(self):
-        """服务关闭"""
+        """关闭服务"""
         self.logger.info("Shutting down MCP SSE Server")
         
         # 关闭会话管理器
         await self.session_manager.shutdown()
         
-        # 关闭MIRIX客户端
+        # 关闭 MIRIX 客户端
         await self.mirix_client.close()
         
         self.logger.info("MCP SSE Server shut down successfully")

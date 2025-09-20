@@ -146,17 +146,77 @@ class MIRIXClient(LoggerMixin):
                 "logging": {}
             }
     
+    async def add_memory(self, memory_data: Dict[str, Any]) -> Dict[str, Any]:
+        """添加记忆到 MIRIX 系统"""
+        try:
+            # 调用 MIRIX 后端的记忆添加 API
+            result = await self._make_request("POST", "/api/memory/add", memory_data)
+            return result
+        except Exception as e:
+            self.logger.error("Failed to add memory", error=str(e))
+            raise
+    
+    async def search_memory(self, search_data: Dict[str, Any]) -> Dict[str, Any]:
+        """搜索用户记忆"""
+        try:
+            # 调用 MIRIX 后端的记忆搜索 API
+            result = await self._make_request("POST", "/api/memory/search", search_data)
+            return result
+        except Exception as e:
+            self.logger.error("Failed to search memory", error=str(e))
+            raise
+    
+    async def send_chat_message(self, chat_data: Dict[str, Any]) -> Dict[str, Any]:
+        """发送聊天消息并处理记忆"""
+        try:
+            # 调用 MIRIX 后端的聊天 API
+            result = await self._make_request("POST", "/api/chat/message", chat_data)
+            return result
+        except Exception as e:
+            self.logger.error("Failed to send chat message", error=str(e))
+            raise
+    
+    async def get_user_profile(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+        """获取用户档案"""
+        try:
+            # 调用 MIRIX 后端的用户档案 API
+            result = await self._make_request("POST", "/api/user/profile", profile_data)
+            return result
+        except Exception as e:
+            self.logger.error("Failed to get user profile", error=str(e))
+            raise
+
     async def list_tools(self) -> List[Dict[str, Any]]:
         """获取工具列表"""
         try:
-            response = await self._make_request("GET", "/mcp/tools")
-            tools = response.get("tools", [])
-            
+            # 首先尝试从MIRIX后端获取MCP状态
+            status_response = await self._make_request("GET", "/mcp/status")
+            connected_servers = status_response.get("connected_servers", [])
+
+            # 如果没有连接的MCP服务器，返回空工具列表
+            if not connected_servers:
+                self.logger.debug("No connected MCP servers, returning empty tools list")
+                return []
+
+            # 如果有连接的服务器，尝试获取工具（但MIRIX后端可能还没有实现这个端点）
+            try:
+                response = await self._make_request("GET", "/mcp/tools")
+                tools = response.get("tools", [])
+            except Exception as e:
+                # 如果/mcp/tools端点不存在，返回空列表而不是报错
+                self.logger.warning("MIRIX backend does not support /mcp/tools endpoint yet", error=str(e))
+                tools = []
+
+            # 如果没有工具，返回一个空数组而不是None
+            if tools is None:
+                tools = []
+
             self.logger.debug("Retrieved tools list", count=len(tools))
             return tools
-            
+
         except Exception as e:
             self.logger.error("Failed to list tools", error=str(e))
+            # 返回空数组而不是None，确保总是返回有效的tools字段
             return []
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -193,12 +253,25 @@ class MIRIXClient(LoggerMixin):
     async def list_resources(self) -> List[Dict[str, Any]]:
         """获取资源列表"""
         try:
-            response = await self._make_request("GET", "/mcp/resources")
-            resources = response.get("resources", [])
-            
+            # 首先检查是否有连接的MCP服务器
+            status_response = await self._make_request("GET", "/mcp/status")
+            connected_servers = status_response.get("connected_servers", [])
+
+            if not connected_servers:
+                self.logger.debug("No connected MCP servers, returning empty resources list")
+                return []
+
+            # 尝试获取资源列表
+            try:
+                response = await self._make_request("GET", "/mcp/resources")
+                resources = response.get("resources", [])
+            except Exception as e:
+                self.logger.warning("MIRIX backend does not support /mcp/resources endpoint yet", error=str(e))
+                resources = []
+
             self.logger.debug("Retrieved resources list", count=len(resources))
             return resources
-            
+
         except Exception as e:
             self.logger.error("Failed to list resources", error=str(e))
             return []
@@ -225,12 +298,25 @@ class MIRIXClient(LoggerMixin):
     async def list_prompts(self) -> List[Dict[str, Any]]:
         """获取提示列表"""
         try:
-            response = await self._make_request("GET", "/mcp/prompts")
-            prompts = response.get("prompts", [])
-            
+            # 首先检查是否有连接的MCP服务器
+            status_response = await self._make_request("GET", "/mcp/status")
+            connected_servers = status_response.get("connected_servers", [])
+
+            if not connected_servers:
+                self.logger.debug("No connected MCP servers, returning empty prompts list")
+                return []
+
+            # 尝试获取提示列表
+            try:
+                response = await self._make_request("GET", "/mcp/prompts")
+                prompts = response.get("prompts", [])
+            except Exception as e:
+                self.logger.warning("MIRIX backend does not support /mcp/prompts endpoint yet", error=str(e))
+                prompts = []
+
             self.logger.debug("Retrieved prompts list", count=len(prompts))
             return prompts
-            
+
         except Exception as e:
             self.logger.error("Failed to list prompts", error=str(e))
             return []

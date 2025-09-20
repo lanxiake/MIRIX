@@ -6,13 +6,15 @@ API路由定义
 
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from pydantic import BaseModel
 
 from .config import Settings, get_settings
-from .mcp_server import MCPSSEServer
 from .mcp_protocol import MCPMessage, validate_mcp_message
 from .logging_config import LoggerMixin
+
+if TYPE_CHECKING:
+    from .mcp_server import MCPSSEServer
 
 class HealthResponse(BaseModel):
     """健康检查响应"""
@@ -32,7 +34,7 @@ class MessageRequest(BaseModel):
     message: str
     context: Optional[Dict[str, Any]] = None
 
-def create_routes(mcp_server: MCPSSEServer, settings: Settings) -> APIRouter:
+def create_routes(mcp_server: "MCPSSEServer", settings: Settings) -> APIRouter:
     """创建API路由"""
     
     router = APIRouter()
@@ -201,17 +203,47 @@ def create_routes(mcp_server: MCPSSEServer, settings: Settings) -> APIRouter:
             raise HTTPException(status_code=500, detail="Failed to get rate limit status")
     
     # MCP工具相关端点
-    @router.get("/mcp/tools")
-    async def list_mcp_tools():
+    @router.get("/tools")
+    async def list_mcp_tools(request: Request):
         """列出MCP工具"""
+        # For GET requests, we might not have a standard JSON-RPC ID,
+        # but we can try to get it from query params if provided.
+        request_id = request.query_params.get("id")
         try:
             tools = await mcp_server.mirix_client.list_tools()
-            return {"tools": tools}
+            return JSONResponse(content={
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": tools}
+            })
         except Exception as e:
             logger_mixin.logger.error("Failed to list MCP tools", error=str(e))
-            raise HTTPException(status_code=500, detail="Failed to list tools")
+            return JSONResponse(status_code=500, content={
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32603, "message": "Internal error", "data": str(e)}
+            })
+
+    @router.get("/mcp/tools")
+    async def list_mcp_tools_v2(request: Request):
+        """列出MCP工具 - MCP协议端点"""
+        request_id = request.query_params.get("id")
+        try:
+            tools = await mcp_server.mirix_client.list_tools()
+            return JSONResponse(content={
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": tools}
+            })
+        except Exception as e:
+            logger_mixin.logger.error("Failed to list MCP tools", error=str(e))
+            return JSONResponse(status_code=500, content={
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32603, "message": "Internal error", "data": str(e)}
+            })
     
-    @router.post("/mcp/tools/call")
+    @router.post("/tools/call")
     async def call_mcp_tool(request: Dict[str, Any]):
         """调用MCP工具"""
         try:
@@ -310,46 +342,7 @@ def create_routes(mcp_server: MCPSSEServer, settings: Settings) -> APIRouter:
         
         return config_dict
     
-    # 错误处理
-    @router.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException):
-        """HTTP异常处理"""
-        logger_mixin.logger.warning("HTTP exception", 
-                                  path=request.url.path,
-                                  method=request.method,
-                                  status_code=exc.status_code,
-                                  detail=exc.detail)
-        
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "error": {
-                    "code": exc.status_code,
-                    "message": exc.detail,
-                    "path": str(request.url.path),
-                    "method": request.method
-                }
-            }
-        )
-    
-    @router.exception_handler(Exception)
-    async def general_exception_handler(request: Request, exc: Exception):
-        """通用异常处理"""
-        logger_mixin.logger.error("Unhandled exception", 
-                                path=request.url.path,
-                                method=request.method,
-                                error=str(exc))
-        
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": {
-                    "code": 500,
-                    "message": "Internal server error",
-                    "path": str(request.url.path),
-                    "method": request.method
-                }
-            }
-        )
+    # 错误处理 - 移除exception_handler，因为APIRouter不支持
+    # 错误处理应该在FastAPI应用级别设置
     
     return router

@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     # MIRIX后端配置
     mirix_backend_url: str = Field(
         default="http://localhost:47283",
-        env="MIRIX_BACKEND_URL"
+        env="MIRIX_BACKEND_URL",
+        description="MIRIX 后端服务 URL"
     )
     mirix_backend_timeout: int = Field(default=30, env="MIRIX_BACKEND_TIMEOUT")
     
@@ -55,7 +56,16 @@ class Settings(BaseSettings):
     cache_ttl: int = Field(default=300, env="CACHE_TTL")  # 缓存TTL（秒）
     
     # 会话管理配置
+    max_sessions: int = Field(default=100, env="MAX_SESSIONS")  # 最大会话数
+    session_timeout: int = Field(default=3600, env="SESSION_TIMEOUT")  # 会话超时时间（秒）
     session_cleanup_interval: int = Field(default=60, env="SESSION_CLEANUP_INTERVAL")  # 会话清理间隔（秒）
+    
+    # 记忆管理配置
+    default_user_id: str = Field(default="default_user", env="DEFAULT_USER_ID")
+    ai_model: str = Field(default="gpt-4", env="AI_MODEL")
+    auto_categorize_memory: bool = Field(default=True, env="AUTO_CATEGORIZE_MEMORY")
+    default_memory_type: str = Field(default="semantic", env="DEFAULT_MEMORY_TYPE")
+    memory_search_limit: int = Field(default=10, env="MEMORY_SEARCH_LIMIT")
     
     @validator("allowed_origins", pre=True)
     def parse_allowed_origins(cls, v):
@@ -91,6 +101,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"  # 忽略额外的字段
 
 # 全局设置实例
 _settings: Optional[Settings] = None

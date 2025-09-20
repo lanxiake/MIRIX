@@ -50,6 +50,10 @@ def create_app() -> FastAPI:
     # 注册路由
     app.include_router(mcp_server.router, prefix="/mcp")
     
+    # 挂载 SSE 应用到 /sse 端点（符合 MCP 客户端配置）
+    sse_app = mcp_server.get_sse_app()
+    app.mount("/", sse_app)
+    
     # 健康检查端点
     @app.get("/health")
     async def health_check():
