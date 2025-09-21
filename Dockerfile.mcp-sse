@@ -19,7 +19,7 @@ COPY requirements-mcp-sse.txt ./
 
 # 安装Python依赖
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-mcp-sse.txt
+    pip install --no-cache-dir -r requirements-mcp-sse.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 设置权限
 RUN chown -R mcpuser:mcpuser /app

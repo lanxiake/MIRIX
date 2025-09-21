@@ -1,4 +1,4 @@
-TEMPORARY_MESSAGE_LIMIT = 20
+TEMPORARY_MESSAGE_LIMIT = 2  # 减少到2个消息就触发记忆吸收
 MAXIMUM_NUM_IMAGES_IN_CLOUD = 600
 
 GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-pro', 'gemini-2.0-flash-lite', 'gemini-2.5-flash']

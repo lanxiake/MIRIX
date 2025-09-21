@@ -31,23 +31,39 @@ def switch_user_context(agent_wrapper, user_id: str):
     """Switch agent's user context and manage user status"""
     if agent_wrapper and agent_wrapper.client:
         from mirix.schemas.user import User as PydanticUser
-        
+
         # Set current user to inactive
         if agent_wrapper.client.user:
             current_user = agent_wrapper.client.user
             agent_wrapper.client.server.user_manager.update_user_status(current_user.id, "inactive")
-        
-        # Get and set new user to active
-        user = agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
-        agent_wrapper.client.server.user_manager.update_user_status(user_id, "active")
-        agent_wrapper.client.user = user
-        return user
+
+        # Get and set new user to active - use get_user_or_default to support name lookup
+        user = get_user_or_default(agent_wrapper, user_id)
+        if user:
+            agent_wrapper.client.server.user_manager.update_user_status(user.id, "active")
+            agent_wrapper.client.user = user
+            return user
     return None
 
 def get_user_or_default(agent_wrapper, user_id: Optional[str] = None):
-    """Get user by ID or return current user"""
+    """Get user by ID or name, or return current user"""
     if user_id:
-        return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+        # First try to get user by name
+        try:
+            user = agent_wrapper.client.server.user_manager.get_user_by_name(user_id)
+            if user:
+                return user
+        except:
+            pass
+
+        # If not found by name, try by ID
+        try:
+            return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+        except:
+            pass
+
+        # If still not found, return default user
+        return agent_wrapper.client.server.user_manager.get_default_user()
     elif agent_wrapper and agent_wrapper.client.user:
         return agent_wrapper.client.user
     else:
@@ -318,6 +334,8 @@ class MessageRequest(BaseModel):
     voice_files: Optional[List[str]] = None  # Base64 encoded voice files
     memorizing: bool = False
     is_screen_monitoring: Optional[bool] = False
+    user_id: Optional[str] = None  # 添加用户ID字段用于MCP调用
+    force_absorb: bool = False  # 强制触发记忆吸收，用于调试
 
 class MessageResponse(BaseModel):
     response: str
@@ -633,6 +651,7 @@ async def send_message_endpoint(request: MessageRequest):
                 sources=request.sources,  # Pass sources to agent
                 voice_files=request.voice_files,  # Pass voice files to agent
                 memorizing=request.memorizing,
+                force_absorb_content=request.force_absorb,  # 传递强制吸收参数
                 user_id=request.user_id
             )
         )

@@ -112,6 +112,16 @@ class UserManager:
             return user.to_pydantic()
 
     @enforce_types
+    def get_user_by_name(self, user_name: str) -> Optional[PydanticUser]:
+        """Fetch a user by name."""
+        with self.session_maker() as session:
+            try:
+                user = UserModel.read(db_session=session, identifier=None, name=user_name)
+                return user.to_pydantic()
+            except NoResultFound:
+                return None
+
+    @enforce_types
     def get_default_user(self) -> PydanticUser:
         """Fetch the default user."""
         return self.get_user_by_id(self.DEFAULT_USER_ID)

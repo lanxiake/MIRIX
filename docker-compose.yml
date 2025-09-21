@@ -50,17 +50,23 @@ services:
       # 数据库配置
       DATABASE_URL: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
-      
+
       # 服务配置
       HOST: 0.0.0.0
       PORT: 47283
-      
+
       # API密钥（从环境变量或.env文件加载）
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
-      
-      # 其他配置
+
+      # 代理配置（使用宿主机代理）
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,172.21.73.86,172.21.64.1,chromium,postgres,redis,mirix-frontend,mirix-mcp-sse}
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,172.21.73.86,172.21.64.1,chromium,postgres,redis,mirix-frontend,mirix-mcp-sse}
       PYTHONPATH: /app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       
@@ -144,6 +150,3 @@ volumes:
 networks:
   mirix-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.21.0.0/16
