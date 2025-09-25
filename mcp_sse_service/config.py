@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     
     # MIRIX后端配置
     mirix_backend_url: str = Field(
-        default="http://localhost:47283",
+        default="http://10.157.152.40:47283",
         env="MIRIX_BACKEND_URL",
         description="MIRIX 后端服务 URL"
     )

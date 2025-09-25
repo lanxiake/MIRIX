@@ -21,11 +21,11 @@ MIRIX MCP SSE 服务器是一个支持 Server-Sent Events (SSE) 的 Model Contex
       "command": "python3",
       "args": [
         "/opt/MIRIX/mcp_sse_service/run_mcp_server.py",
-        "--backend-url", "http://localhost:47283",
+        "--backend-url", "http://10.157.152.40:47283",
         "--user-id", "user-00000000-0000-4000-8000-000000000000"
       ],
       "env": {
-        "MIRIX_BACKEND_URL": "http://localhost:47283",
+        "MIRIX_BACKEND_URL": "http://10.157.152.40:47283",
         "DEFAULT_USER_ID": "user-00000000-0000-4000-8000-000000000000"
       }
     }
@@ -43,7 +43,7 @@ python3 run_mcp_server.py
 
 # 使用自定义配置
 python3 run_mcp_server.py \
-  --backend-url http://localhost:47283 \
+  --backend-url http://10.157.152.40:47283 \
   --user-id user-00000000-0000-4000-8000-000000000000 \
   --debug
 ```
@@ -58,7 +58,7 @@ python3 run_mcp_server.py \
   --enable-sse \
   --sse-port 8081 \
   --sse-host localhost \
-  --backend-url http://localhost:47283 \
+  --backend-url http://10.157.152.40:47283 \
   --user-id user-00000000-0000-4000-8000-000000000000 \
   --debug
 ```
@@ -67,7 +67,7 @@ python3 run_mcp_server.py \
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--backend-url` | MIRIX 后端服务 URL | `http://localhost:47283` |
+| `--backend-url` | MIRIX 后端服务 URL | `http://10.157.152.40:47283` |
 | `--user-id` | 默认用户 ID | `default_user` |
 | `--enable-sse` | 启用 SSE 服务器模式 | `false` |
 | `--sse-port` | SSE 服务器端口 | `8080` |
@@ -80,7 +80,7 @@ python3 run_mcp_server.py \
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `MIRIX_BACKEND_URL` | MIRIX 后端服务 URL | `http://localhost:47283` |
+| `MIRIX_BACKEND_URL` | MIRIX 后端服务 URL | `http://10.157.152.40:47283` |
 | `DEFAULT_USER_ID` | 默认用户 ID | `default_user` |
 | `DEBUG` | 调试模式 | `false` |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
@@ -238,7 +238,7 @@ curl -N http://localhost:8081/mcp/sse
 ### 2. 用户不存在错误
 ```bash
 # 查看可用用户
-curl http://localhost:47283/users
+curl http://10.157.152.40:47283/users
 
 # 使用正确的用户 ID 重新启动服务
 python3 run_mcp_server.py --user-id "实际的用户ID"

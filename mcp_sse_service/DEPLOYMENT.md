@@ -20,7 +20,7 @@ cd /opt/MIRIX
 python3 main.py
 ```
 
-确保服务运行在 `http://localhost:47283`
+确保服务运行在 `http://10.157.152.40:47283`
 
 ### 3. 配置 MCP 服务器
 
@@ -48,7 +48,7 @@ python3 run_mcp_server.py --test
 🔬 MIRIX MCP 服务器测试套件
 ==================================================
 ⚙️  配置信息:
-   - MIRIX 后端: http://localhost:47283
+   - MIRIX 后端: http://10.157.152.40:47283
    - 默认用户: default_user
    - AI 模型: gemini-2.0-flash-thinking-exp
    - 调试模式: False
@@ -92,7 +92,7 @@ python3 run_mcp_server.py --debug
       "args": ["/opt/MIRIX/mcp_sse_service/run_mcp_server.py"],
       "cwd": "/opt/MIRIX/mcp_sse_service",
       "env": {
-        "MIRIX_BACKEND_URL": "http://localhost:47283",
+        "MIRIX_BACKEND_URL": "http://10.157.152.40:47283",
         "DEFAULT_USER_ID": "your_user_id"
       }
     }
@@ -106,7 +106,7 @@ python3 run_mcp_server.py --debug
 
 ```bash
 # MIRIX 后端配置
-MIRIX_BACKEND_URL=http://localhost:47283    # MIRIX 后端 URL
+MIRIX_BACKEND_URL=http://10.157.152.40:47283    # MIRIX 后端 URL
 MIRIX_BACKEND_TIMEOUT=30                    # 连接超时时间（秒）
 
 # 用户配置
@@ -217,7 +217,7 @@ LOG_LEVEL=INFO                             # 日志级别
 **解决方案：**
 ```bash
 # 检查 MIRIX 后端是否运行
-curl http://localhost:47283/health
+curl http://10.157.152.40:47283/health
 
 # 检查配置
 echo $MIRIX_BACKEND_URL
@@ -270,7 +270,7 @@ python3 -c "
 import asyncio
 from mirix_client_simple import MIRIXClient
 async def test():
-    client = MIRIXClient('http://localhost:47283')
+    client = MIRIXClient('http://10.157.152.40:47283')
     await client.initialize()
     print(await client.health_check())
     await client.close()

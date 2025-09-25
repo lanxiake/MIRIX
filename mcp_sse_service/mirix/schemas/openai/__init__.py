@@ -1,1 +1,0 @@
-# OpenAI schema package

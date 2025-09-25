@@ -39,7 +39,7 @@ cp .env.example .env
 
 ```bash
 # MIRIX 后端配置
-MIRIX_BACKEND_URL=http://localhost:47283
+MIRIX_BACKEND_URL=http://10.157.152.40:47283
 MIRIX_BACKEND_TIMEOUT=30
 
 # 用户配置

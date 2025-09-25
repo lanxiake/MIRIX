@@ -16,7 +16,7 @@ class MCPServerSettings:
         if custom_backend_url:
             self.mirix_backend_url = custom_backend_url
         else:
-            self.mirix_backend_url = os.getenv("MIRIX_BACKEND_URL", "http://localhost:47283")
+            self.mirix_backend_url = os.getenv("MIRIX_BACKEND_URL", "http://10.157.152.40:47283")
 
         self.mirix_backend_timeout = int(os.getenv("MIRIX_BACKEND_TIMEOUT", "30"))
 

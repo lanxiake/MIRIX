@@ -136,7 +136,7 @@ The app can be configured through the Settings panel:
 ## Backend Integration
 
 ### Development Mode
-- Frontend connects to `http://localhost:47283`
+- Frontend connects to `http://10.157.152.40:47283`
 - Python backend runs separately
 - Hot reload for both frontend and backend
 

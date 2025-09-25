@@ -146,7 +146,7 @@ LOG_LEVEL=INFO
 
 ## Key Services and Ports
 
-- **Backend API**: http://localhost:47283
+- **Backend API**: http://10.157.152.40:47283
 - **Frontend UI**: http://localhost:18001 (Docker) / http://localhost:3000 (dev)
 - **MCP SSE Service**: http://localhost:18002 (Docker) / http://localhost:8080 (dev)
 - **PostgreSQL**: localhost:5432

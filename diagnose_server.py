@@ -13,7 +13,7 @@ def diagnose_server():
 
     try:
         # 首先检查服务器健康状态
-        health_url = "http://localhost:47283/health"
+        health_url = "http://10.157.152.40:47283/health"
         response = requests.get(health_url, timeout=10)
         print(f"健康检查状态: {response.status_code}")
         if response.status_code == 200:
@@ -24,7 +24,7 @@ def diagnose_server():
 
         # 直接调用一个简单的API来查看是否有具体错误信息
         # 先尝试获取用户信息
-        users_url = "http://localhost:47283/users"
+        users_url = "http://10.157.152.40:47283/users"
         try:
             response = requests.get(users_url, timeout=10)
             print(f"用户API状态: {response.status_code}")
@@ -50,7 +50,7 @@ def diagnose_server():
             "user_id": None
         }
 
-        upload_url = "http://localhost:47283/documents/upload"
+        upload_url = "http://10.157.152.40:47283/documents/upload"
         response = requests.post(upload_url, json=upload_data, timeout=30)
 
         print(f"上传状态: {response.status_code}")
