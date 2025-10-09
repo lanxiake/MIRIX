@@ -1,4 +1,5 @@
 from typing import Callable, Dict, List, Optional
+import logging
 
 from mirix.constants import MESSAGE_SUMMARY_REQUEST_ACK
 from mirix.llm_api.llm_client import LLMClient
@@ -10,6 +11,8 @@ from mirix.schemas.message import Message
 from mirix.schemas.mirix_message_content import TextContent
 from mirix.settings import summarizer_settings
 from mirix.utils import count_tokens, printd
+
+logger = logging.getLogger(__name__)
 
 
 def get_memory_functions(cls: Memory) -> Dict[str, Callable]:
@@ -70,27 +73,62 @@ def summarize_messages(
     summary_prompt = SUMMARY_PROMPT_SYSTEM
     summary_input = _format_summary_history(message_sequence_to_summarize)
     summary_input_tkns = count_tokens(summary_input)
-    if (
-        summary_input_tkns
-        > summarizer_settings.memory_warning_threshold * context_window
-    ):
-        trunc_ratio = (
-            summarizer_settings.memory_warning_threshold
-            * context_window
-            / summary_input_tkns
-        ) * 0.8  # For good measure...
-        cutoff = int(len(message_sequence_to_summarize) * trunc_ratio)
-        summary_input = str(
-            [
-                summarize_messages(
+
+    # Check if the input is too large for summarization
+    max_summary_tokens = int(summarizer_settings.memory_warning_threshold * context_window)
+
+    if summary_input_tkns > max_summary_tokens:
+        # Need to split into batches and summarize recursively
+        logger.info(f"Summary input ({summary_input_tkns} tokens) exceeds threshold ({max_summary_tokens} tokens)")
+
+        # Calculate how many batches we need
+        # Use 0.5 (50%) of max to be more conservative and leave room for the prompt
+        target_tokens_per_batch = int(max_summary_tokens * 0.5)
+        num_batches = max(2, int(summary_input_tkns / target_tokens_per_batch) + 1)
+        batch_size = len(message_sequence_to_summarize) // num_batches
+
+        if batch_size < 1:
+            batch_size = 1
+
+        logger.info(f"Splitting into {num_batches} batches of ~{batch_size} messages each")
+
+        # Summarize each batch
+        summaries = []
+        for i in range(0, len(message_sequence_to_summarize), batch_size):
+            batch = message_sequence_to_summarize[i:i+batch_size]
+            if len(batch) == 0:
+                continue
+            logger.info(f"Summarizing batch {i//batch_size + 1}/{num_batches} ({len(batch)} messages)")
+            batch_summary = summarize_messages(
+                agent_state,
+                message_sequence_to_summarize=batch,
+                existing_file_uris=existing_file_uris,
+            )
+            summaries.append(batch_summary)
+
+        # Combine all summaries into one
+        if len(summaries) == 1:
+            return summaries[0]
+        else:
+            combined = " | ".join(summaries)
+            # If combined is still too long, summarize the summaries
+            combined_tokens = count_tokens(combined)
+            if combined_tokens > max_summary_tokens:
+                logger.info(f"Combined summaries still too long ({combined_tokens} tokens), re-summarizing")
+                # Create a simple message to summarize the summaries
+                summary_messages = [
+                    Message(
+                        agent_id=agent_state.id,
+                        role=MessageRole.user,
+                        content=[TextContent(text=s)]
+                    ) for s in summaries
+                ]
+                return summarize_messages(
                     agent_state,
-                    message_sequence_to_summarize=message_sequence_to_summarize[
-                        :cutoff
-                    ],
+                    message_sequence_to_summarize=summary_messages,
+                    existing_file_uris=existing_file_uris,
                 )
-            ]
-            + message_sequence_to_summarize[cutoff:]
-        )
+            return combined
 
     dummy_agent_id = agent_state.id
     message_sequence = [
