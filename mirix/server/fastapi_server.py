@@ -103,7 +103,7 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
                 "redirect_uris": [
-                    "http://localhost:8080/",
+                    "http://localhost:18002/",
                     "http://localhost:8081/",
                     "http://localhost:8082/"
                 ]
@@ -137,7 +137,7 @@ async def handle_gmail_connection(client_id: str, client_secret: str, server_nam
                 print("Opening browser for Google authentication...")
                 
                 # Try specific ports that match redirect URIs - EXACT same logic
-                for port in [8080, 8081, 8082]:
+                for port in [18002, 8081, 8082]:
                     try:
                         creds = flow.run_local_server(port=port, open_browser=True)
                         break

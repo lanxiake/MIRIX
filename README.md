@@ -17,7 +17,50 @@ Your personal AI that builds memory through screen observation and natural conve
 - **Advanced Search:** PostgreSQL-native BM25 full-text search with vector similarity support
 - **Multi-Modal Input:** Text, images, voice, and screen captures processed seamlessly
 
-### Quick Start
+### MCP 服务器支持 🔌
+
+MIRIX 现在提供完整的 MCP (Model Context Protocol) 服务器支持，让您可以将 MIRIX 的记忆功能集成到任何支持 MCP 协议的 AI 客户端中。
+
+### 快速部署 MCP 服务器
+
+```bash
+# 使用 Docker Compose 部署完整服务栈
+git clone https://github.com/Mirix-AI/MIRIX.git
+cd MIRIX
+docker-compose up -d
+
+# MCP 服务将在以下地址可用：
+# SSE 端点: http://localhost:18002/sse
+```
+
+### MCP 功能特性
+
+- **🔥 纯 SSE 模式**: 专门优化的 SSE 传输，提供更好的性能和稳定性
+- **🐳 Docker 优先**: 专为容器化部署设计，包含完整的健康检查
+- **🧠 智能记忆管理**: 支持六种记忆类型的分类存储和检索
+- **🔍 高效搜索**: 基于语义理解的智能记忆搜索
+- **💬 个性化对话**: 基于记忆的上下文感知对话
+
+### 客户端集成示例
+
+**Claude Desktop 配置**:
+```json
+{
+  "mcpServers": {
+    "mirix-memory": {
+      "command": "curl",
+      "args": ["-N", "http://localhost:18002/sse"],
+      "env": {
+        "MCP_TRANSPORT": "sse"
+      }
+    }
+  }
+}
+```
+
+详细的 MCP 服务器文档请参见 [MCP_README.md](MCP_README.md)。
+
+## Quick Start
 **End-Users**: For end-users who want to build your own memory using MIRIX, please checkout the quick installation guide [here](https://docs.mirix.io/getting-started/installation/#quick-installation-dmg).
 
 **Developers**: For users who want to apply our memory system as the backend, please check out our [Backend Usage](https://docs.mirix.io/user-guide/backend-usage/). Basically, you just need to run:

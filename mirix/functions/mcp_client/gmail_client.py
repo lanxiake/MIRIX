@@ -65,7 +65,7 @@ def authenticate_gmail_local(client_id: str, client_secret: str, token_file: str
                         "token_uri": "https://oauth2.googleapis.com/token",
                         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
                         "redirect_uris": [
-                            "http://localhost:8080/",
+                            "http://localhost:18002/",
                             "http://localhost:8081/",
                             "http://localhost:8082/"
                         ]
@@ -75,7 +75,7 @@ def authenticate_gmail_local(client_id: str, client_secret: str, token_file: str
                 flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
                 
                 # Try specific ports that match redirect URIs
-                for port in [8080, 8081, 8082]:
+                for port in [18002, 8081, 8082]:
                     try:
                         # Request offline access to get refresh token
                         creds = flow.run_local_server(port=port, open_browser=True, access_type='offline', prompt='consent')

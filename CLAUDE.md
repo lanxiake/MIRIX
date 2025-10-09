@@ -49,7 +49,7 @@ npm run electron-pack
 # Install MCP SSE specific dependencies
 pip install -r requirements-mcp-sse.txt
 
-# Run MCP SSE service (port 8080)
+# Run MCP SSE service (port 18002)
 cd mcp_sse_service
 python -m mirix.server.mcp_sse_server
 ```
@@ -148,7 +148,7 @@ LOG_LEVEL=INFO
 
 - **Backend API**: http://10.157.152.40:47283
 - **Frontend UI**: http://localhost:18001 (Docker) / http://localhost:3000 (dev)
-- **MCP SSE Service**: http://localhost:18002 (Docker) / http://localhost:8080 (dev)
+- **MCP SSE Service**: http://localhost:18002 (Docker) / http://localhost:18002 (dev)
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6380 (Docker) / localhost:6379 (local)
 

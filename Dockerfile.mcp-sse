@@ -1,5 +1,5 @@
-# MIRIX MCP SSE Service Dockerfile
-# 提供对外的MCP服务接口，支持SSE传输
+# MIRIX MCP Server Dockerfile
+# 提供MCP服务接口，支持SSE传输
 
 FROM python:3.11-slim
 
@@ -13,13 +13,26 @@ RUN apt-get update && apt-get install -y \
 # 创建非root用户
 RUN useradd --create-home --shell /bin/bash mcpuser
 
-# 复制MCP SSE服务相关文件
-COPY mcp_sse_service/ ./mcp_sse_service/
-COPY requirements-mcp-sse.txt ./
+# 复制MCP服务器相关文件
+COPY mcp_server/ ./mcp_server/
+COPY mirix/ ./mirix/
+COPY requirements.txt ./
 
 # 安装Python依赖
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-mcp-sse.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 复制配置文件
+COPY .env* ./
+
+# 设置环境变量
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV MCP_TRANSPORT=sse
+ENV MCP_HOST=0.0.0.0
+ENV MCP_PORT=18002
+ENV MCP_DEBUG=false
 
 # 设置权限
 RUN chown -R mcpuser:mcpuser /app
@@ -29,10 +42,10 @@ USER mcpuser
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:18002/health || exit 1
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 18002
 
 # 启动命令
-CMD ["python", "-m", "mcp_sse_service.main"]
+CMD ["python", "-m", "mcp_server", "--host", "0.0.0.0", "--port", "18002", "--debug"]

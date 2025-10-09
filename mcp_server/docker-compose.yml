@@ -1,0 +1,70 @@
+# MCP Server Docker Compose 配置
+# 用于本地开发和测试环境
+
+version: '3.8'
+
+services:
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: mcp_server/Dockerfile
+    container_name: mcp-server
+    ports:
+      - "${MCP_HOST_PORT:-18002}:18002"
+    environment:
+      - MCP_SERVER_NAME=MIRIX MCP Server
+      - MCP_SERVER_VERSION=2.0.0
+      - MCP_TRANSPORT_TYPE=sse
+      - MCP_SSE_HOST=0.0.0.0
+      - MCP_SSE_PORT=18002
+      - MCP_LOG_LEVEL=${MCP_LOG_LEVEL:-INFO}
+      - MCP_DEBUG=${MCP_DEBUG:-false}
+      - MIRIX_BACKEND_URL=${MIRIX_BACKEND_URL:-http://host.docker.internal:8000}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://mirix:mirix@postgres:5432/mirix}
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:18002/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - postgres
+    networks:
+      - mcp-network
+
+  # PostgreSQL 数据库 (可选，如果需要独立数据库)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mcp-postgres
+    environment:
+      - POSTGRES_DB=mirix
+      - POSTGRES_USER=mirix
+      - POSTGRES_PASSWORD=mirix
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # Redis 缓存 (可选)
+  redis:
+    image: redis:7-alpine
+    container_name: mcp-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+volumes:
+  postgres_data:
+
+networks:
+  mcp-network:
+    driver: bridge

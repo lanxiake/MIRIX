@@ -65,8 +65,8 @@ services:
       HTTPS_PROXY: ${HTTPS_PROXY:-http://10.157.152.63:7890}
       http_proxy: ${HTTP_PROXY:-http://10.157.152.63:7890}
       https_proxy: ${HTTPS_PROXY:-http://10.157.152.63:7890}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,10.157.152.40,10.157.152.63,chromium,postgres,redis,mirix-frontend,mirix-mcp-sse}
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,10.157.152.40,10.157.152.63,chromium,postgres,redis,mirix-frontend,mirix-mcp-sse}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,10.157.152.40,10.157.152.63,chromium,postgres,redis,mirix-frontend,mirix-mcp}
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,10.157.152.40,10.157.152.63,chromium,postgres,redis,mirix-frontend,mirix-mcp}
       PYTHONPATH: /app
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       
@@ -110,27 +110,30 @@ services:
     networks:
       - mirix-network
 
-  # MCP SSE服务（对外提供MCP服务）
-  mirix-mcp-sse:
+  # MCP服务（仅支持SSE模式）
+  mirix-mcp:
     build:
       context: .
       dockerfile: Dockerfile.mcp-sse
-    container_name: mirix-mcp-sse
+    container_name: mirix-mcp
     environment:
-      MIRIX_BACKEND_URL: http://10.157.152.40:47283
-      MCP_SSE_PORT: 8080
-      MCP_SSE_HOST: 0.0.0.0
+      MIRIX_BACKEND_URL: http://mirix-backend:47283
+      MCP_TRANSPORT: sse
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 18002
+      MCP_DEBUG: ${MCP_DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "18002:8080"
+      - "18002:18002"  # SSE端口映射
     depends_on:
       mirix-backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://10.157.152.40:18002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:18002/sse"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - mirix-network
