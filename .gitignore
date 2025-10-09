@@ -33,4 +33,6 @@ local_evaluations
 .claude/
 mirix.egg-info
 .local
-.spec-workflow/*
+venv/
+.spec-workflow/
+venv_mcp/

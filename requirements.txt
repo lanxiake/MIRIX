@@ -27,6 +27,7 @@ llama_index
 llama-index-embeddings-google-genai
 fastapi>=0.104.1
 uvicorn[standard]>=0.31.1
+aiohttp>=3.8.0
 pydub
 python-multipart
 opentelemetry-api
@@ -46,3 +47,7 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
+ruff
+nodeenv
+pyright
+pytest

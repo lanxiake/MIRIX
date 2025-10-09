@@ -1,0 +1,45 @@
+# MCP Server 专用依赖
+# 基础MCP协议支持
+mcp>=1.0.0
+
+# Web服务器和HTTP客户端
+fastapi>=0.104.1
+uvicorn[standard]>=0.31.1
+httpx>=0.25.0
+httpx-sse>=0.4.0
+aiohttp>=3.8.0
+
+# 数据验证和配置管理
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 环境变量和配置
+python-dotenv>=1.0.0
+
+# 异步和并发支持
+anyio>=4.7.0
+aiofiles>=23.0.0
+
+# 文件上传和多部分数据
+python-multipart>=0.0.6
+
+# 模板引擎
+jinja2>=3.1.0
+
+# 日志记录
+python-json-logger>=2.0.0
+structlog>=23.0.0
+rich>=13.7.1,<14.0.0
+
+# 工具库
+colorama
+humps
+pathvalidate
+
+# 从主项目继承的核心依赖
+sqlalchemy
+psycopg2-binary
+pgvector
+tiktoken
+rapidfuzz
+rank-bm25

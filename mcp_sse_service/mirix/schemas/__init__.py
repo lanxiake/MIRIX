@@ -1,1 +1,0 @@
-# Mirix schemas package
