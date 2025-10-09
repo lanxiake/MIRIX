@@ -398,13 +398,17 @@ class OpenAIClient(LLMClientBase):
 
         if isinstance(e, openai.BadRequestError):
             logger.warning(f"[OpenAI] Bad request (400): {str(e)}")
-            # BadRequestError can signify different issues (e.g., invalid args, context length)
-            # Check message content if finer-grained errors are needed
-            # Example: if "context_length_exceeded" in str(e): return LLMContextLengthExceededError(...)
+            # Check if it's a context length error
+            error_str = str(e)
+            if "context length" in error_str.lower() or "maximum context" in error_str.lower():
+                from mirix.errors import ContextWindowExceededError
+                return ContextWindowExceededError(
+                    message=f"Context window exceeded: {str(e)}",
+                    details=e.body if hasattr(e, 'body') else {},
+                )
             return LLMBadRequestError(
                 message=f"Bad request to OpenAI: {str(e)}",
-                code=ErrorCode.INVALID_ARGUMENT,  # Or more specific if detectable
-                details=e.body,
+                details=e.body if hasattr(e, 'body') else {},
             )
 
         if isinstance(e, openai.AuthenticationError):
@@ -413,8 +417,7 @@ class OpenAIClient(LLMClientBase):
             )  # More severe log level
             return LLMAuthenticationError(
                 message=f"Authentication failed with OpenAI: {str(e)}",
-                code=ErrorCode.UNAUTHENTICATED,
-                details=e.body,
+                details=e.body if hasattr(e, 'body') else {},
             )
 
         if isinstance(e, openai.PermissionDeniedError):
@@ -423,8 +426,7 @@ class OpenAIClient(LLMClientBase):
             )  # More severe log level
             return LLMPermissionDeniedError(
                 message=f"Permission denied by OpenAI: {str(e)}",
-                code=ErrorCode.PERMISSION_DENIED,
-                details=e.body,
+                details=e.body if hasattr(e, 'body') else {},
             )
 
         if isinstance(e, openai.NotFoundError):
@@ -432,16 +434,14 @@ class OpenAIClient(LLMClientBase):
             # Could be invalid model name, etc.
             return LLMNotFoundError(
                 message=f"Resource not found in OpenAI: {str(e)}",
-                code=ErrorCode.NOT_FOUND,
-                details=e.body,
+                details=e.body if hasattr(e, 'body') else {},
             )
 
         if isinstance(e, openai.UnprocessableEntityError):
             logger.warning(f"[OpenAI] Unprocessable entity (422): {str(e)}")
             return LLMUnprocessableEntityError(
                 message=f"Invalid request content for OpenAI: {str(e)}",
-                code=ErrorCode.INVALID_ARGUMENT,  # Usually validation errors
-                details=e.body,
+                details=e.body if hasattr(e, 'body') else {},
             )
 
         # General API error catch-all
@@ -454,15 +454,15 @@ class OpenAIClient(LLMClientBase):
             else:
                 # Treat other 4xx as bad requests if not caught above
                 error_cls = LLMBadRequestError
-                error_code = ErrorCode.INVALID_ARGUMENT
+                error_code = None
 
             return error_cls(
                 message=f"OpenAI API error: {str(e)}",
                 code=error_code,
                 details={
                     "status_code": e.status_code,
-                    "response": str(e.response),
-                    "body": e.body,
+                    "response": str(e.response) if hasattr(e, 'response') else None,
+                    "body": e.body if hasattr(e, 'body') else {},
                 },
             )
 
