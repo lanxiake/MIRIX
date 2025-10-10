@@ -586,6 +586,7 @@ const resources = {
         timezone: '时区',
         apiKeyManagement: 'API 密钥管理',
         updateApiKeys: '更新 API 密钥',
+        customModels: '自定义模型',
         about: {
           name: 'MIRIX 桌面端',
           version: '版本',
@@ -615,7 +616,8 @@ const resources = {
           updating: '更新中...',
           applying: '应用中...',
           changing: '更改中...',
-          checking: '检查中...'
+          checking: '检查中...',
+          deleting: '删除中...'
         },
         mcp: {
           title: 'MCP 工具市场',
@@ -955,12 +957,6 @@ const resources = {
           modelNameRequired: '模型名称是必填项',
           endpointRequired: 'Base URL是必填项',
           apiKeyRequired: 'API密钥是必填项'
-        }
-      },
-      settings: {
-        customModels: '自定义模型',
-        states: {
-          deleting: '删除中...'
         }
       },
       memory: {
