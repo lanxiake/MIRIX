@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..agent.agent_wrapper import AgentWrapper
 from ..functions.mcp_client import StdioServerConfig, get_mcp_client_manager
@@ -2477,6 +2478,23 @@ class CreateUserRequest(BaseModel):
     set_as_active: bool = True  # Whether to set this user as active when created
 
 
+class UploadDocumentRequest(BaseModel):
+    """文档上传请求模型"""
+    file_name: str = Field(..., description="文件名")
+    file_type: str = Field(..., description="文件类型")
+    content: str = Field(..., description="Base64编码的文件内容")
+    user_id: Optional[str] = Field(None, description="用户ID")
+    description: Optional[str] = Field(None, description="文档描述")
+
+
+class UploadDocumentResponse(BaseModel):
+    """文档上传响应模型"""
+    success: bool = Field(..., description="上传是否成功")
+    message: str = Field(..., description="响应消息")
+    document_id: Optional[str] = Field(None, description="文档ID")
+    processed_content: Optional[Dict[str, Any]] = Field(None, description="处理后的内容信息")
+
+
 class CreateUserResponse(BaseModel):
     success: bool
     message: str
@@ -2504,6 +2522,121 @@ async def create_user(request: CreateUserRequest):
     except Exception as e:
         return CreateUserResponse(
             success=False, message=f"Error creating user: {str(e)}"
+        )
+
+
+@app.post("/documents/upload", response_model=UploadDocumentResponse)
+async def upload_document(request: UploadDocumentRequest):
+    """
+    上传文档并处理为记忆数据
+    
+    支持格式：markdown、txt、excel、csv等
+    集成文档处理器进行文档处理和记忆存储
+    
+    Args:
+        request: 文档上传请求
+        
+    Returns:
+        UploadDocumentResponse: 上传处理结果
+    """
+    logger.info(f"=== 文档上传请求开始 ===")
+    logger.info(f"文件名: {request.file_name}")
+    logger.info(f"文件类型: {request.file_type}")
+    logger.info(f"用户ID: {request.user_id}")
+    logger.info(f"内容长度: {len(request.content) if request.content else 0}")
+    
+    if agent is None:
+        logger.error("智能体未初始化")
+        raise HTTPException(status_code=500, detail="智能体未初始化")
+    
+    try:
+        # 解码Base64内容
+        try:
+            logger.info(f"接收到的content类型: {type(request.content)}")
+            logger.info(f"接收到的content长度: {len(request.content) if request.content else 0}")
+            logger.info(f"接收到的content前100字符: {request.content[:100] if request.content else 'None'}")
+            
+            file_content = base64.b64decode(request.content)
+            logger.info(f"Base64解码成功，内容长度: {len(file_content)}")
+        except Exception as e:
+            logger.error(f"Base64解码失败: {e}")
+            logger.error(f"解码失败的content: {request.content}")
+            raise HTTPException(status_code=400, detail=f"文件内容解码失败: {str(e)}")
+        
+        # 初始化文档处理器
+        from mirix.services.document_processor import DocumentProcessor
+        document_processor = DocumentProcessor()
+        
+        # 检查文件格式支持
+        if not document_processor.is_supported_format(request.file_name):
+            supported_formats = list(document_processor.SUPPORTED_FORMATS.keys())
+            raise HTTPException(
+                status_code=400, 
+                detail=f"不支持的文件格式。支持的格式: {', '.join(supported_formats)}"
+            )
+        
+        # 处理文档内容
+        logger.info("开始处理文档内容")
+        processed_doc = document_processor.process_document(
+            file_path=request.file_name,
+            content=file_content
+        )
+        
+        # 提取文本内容
+        text_content = document_processor.extract_text_content(processed_doc)
+        
+        # 获取当前用户
+        current_user = agent.client.server.user_manager.get_user_by_id(agent.client.user_id)
+        if not current_user:
+            raise HTTPException(status_code=500, detail="无法获取当前用户信息")
+        
+        # 获取资源记忆管理器
+        resource_manager = agent.client.server.resource_memory_manager
+        
+        # 创建资源记忆项
+        from mirix.schemas.resource_memory import ResourceMemoryItem
+        item_data = ResourceMemoryItem(
+            title=request.file_name,
+            content=text_content,
+            summary=processed_doc.get('summary', ''),
+            resource_type=processed_doc.get('file_type', 'unknown'),
+            metadata_=processed_doc,
+            tree_path=[],  # 文档路径
+            user_id=current_user.id,
+            organization_id=current_user.organization_id
+        )
+        
+        resource_item = resource_manager.create_item(
+            item_data=item_data,
+            actor=current_user
+        )
+        
+        logger.info(f"文档已存储到记忆系统: {resource_item.id}")
+        
+        # 构建响应消息
+        success_message = f"文档 '{request.file_name}' 上传并处理成功"
+        
+        return UploadDocumentResponse(
+            success=True,
+            message=success_message,
+            document_id=resource_item.id,
+            processed_content={
+                "file_name": processed_doc['file_name'],
+                "file_type": processed_doc['file_type'],
+                "summary": processed_doc.get('summary', ''),
+                "word_count": processed_doc.get('word_count'),
+                "processed_at": processed_doc.get('processed_at')
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文档上传处理失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500, 
+            detail=f"文档处理失败: {str(e)}"
         )
 
 

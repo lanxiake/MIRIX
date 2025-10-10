@@ -124,7 +124,7 @@ function UploadExportModal({ isOpen, onClose, settings }) {
           fileContent = await readFileAsBase64(file);
         }
 
-        const response = await queuedFetch('/api/documents/upload', {
+        const response = await queuedFetch(`${settings.serverUrl}/api/documents/upload`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
