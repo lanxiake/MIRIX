@@ -5,7 +5,7 @@
 包括请求、响应和验证逻辑，确保数据的一致性和安全性。
 """
 
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field
 from typing import Optional, Dict, Any, List
 import re
 from pathlib import Path
@@ -14,13 +14,13 @@ from pathlib import Path
 class CustomModelDetailResponse(BaseModel):
     """
     自定义模型详情响应模型
-    
+
     用于返回单个自定义模型的完整配置信息，
     主要用于编辑时预填充表单数据。
     """
     success: bool = Field(..., description="操作是否成功")
     message: str = Field(..., description="响应消息")
-    model_config: Optional[Dict[str, Any]] = Field(None, description="模型配置数据")
+    config: Optional[Dict[str, Any]] = Field(None, description="模型配置数据")
 
 
 class UpdateCustomModelRequest(BaseModel):
@@ -33,15 +33,17 @@ class UpdateCustomModelRequest(BaseModel):
     model_name: str = Field(..., description="模型名称，用于标识模型")
     model_endpoint: str = Field(..., description="模型API端点URL")
     api_key: str = Field(..., description="API访问密钥")
+    model_provider: str = Field("openai-compatible", description="模型提供商类型")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="生成温度，控制随机性")
     max_tokens: int = Field(4096, gt=0, description="最大生成token数量")
     maximum_length: int = Field(32768, gt=0, description="最大上下文长度")
 
-    @validator('model_name')
+    @field_validator('model_name')
+    @classmethod
     def validate_model_name(cls, v):
         """
         验证模型名称的有效性
-        
+
         规则：
         1. 不能为空或只包含空白字符
         2. 只能包含字母、数字、下划线和连字符
@@ -49,21 +51,22 @@ class UpdateCustomModelRequest(BaseModel):
         """
         if not v or not v.strip():
             raise ValueError('模型名称不能为空')
-        
+
         v = v.strip()
         if len(v) > 50:
             raise ValueError('模型名称长度不能超过50个字符')
-            
+
         if not re.match(r'^[a-zA-Z0-9_-]+$', v):
             raise ValueError('模型名称只能包含字母、数字、下划线和连字符')
-        
+
         return v
 
-    @validator('model_endpoint')
+    @field_validator('model_endpoint')
+    @classmethod
     def validate_endpoint(cls, v):
         """
         验证模型端点URL的有效性
-        
+
         规则：
         1. 不能为空
         2. 必须是有效的HTTP/HTTPS URL
@@ -71,23 +74,24 @@ class UpdateCustomModelRequest(BaseModel):
         """
         if not v or not v.strip():
             raise ValueError('模型端点不能为空')
-        
+
         v = v.strip()
         if not v.startswith(('http://', 'https://')):
             raise ValueError('模型端点必须是有效的HTTP/HTTPS URL')
-        
+
         # 基本的URL安全检查
         dangerous_chars = ['<', '>', '"', "'", '&', '\n', '\r', '\t']
         if any(char in v for char in dangerous_chars):
             raise ValueError('模型端点包含非法字符')
-        
+
         return v
 
-    @validator('api_key')
+    @field_validator('api_key')
+    @classmethod
     def validate_api_key(cls, v):
         """
         验证API密钥的基本格式
-        
+
         规则：
         1. 不能为空（除非是本地服务）
         2. 长度合理（通常在10-200字符之间）
@@ -96,67 +100,58 @@ class UpdateCustomModelRequest(BaseModel):
         if not v:
             # API密钥可以为空，用于本地服务
             return v
-        
+
         v = v.strip()
         if len(v) < 10:
             raise ValueError('API密钥长度过短，请检查是否正确')
-        
+
         if len(v) > 200:
             raise ValueError('API密钥长度过长，请检查是否正确')
-        
+
         return v
 
-    @validator('temperature')
+    @field_validator('temperature')
+    @classmethod
     def validate_temperature(cls, v):
         """
         验证温度参数的有效性
-        
+
         温度值必须在0-2之间，控制生成的随机性
         """
         if not 0 <= v <= 2:
             raise ValueError('温度值必须在0-2之间')
         return v
 
-    @validator('max_tokens')
+    @field_validator('max_tokens')
+    @classmethod
     def validate_max_tokens(cls, v):
         """
         验证最大token数的有效性
-        
+
         必须是正整数，且不能超过合理范围
         """
         if v <= 0:
             raise ValueError('最大tokens必须大于0')
-        
+
         if v > 100000:  # 设置一个合理的上限
             raise ValueError('最大tokens不能超过100000')
-        
+
         return v
 
-    @validator('maximum_length')
+    @field_validator('maximum_length')
+    @classmethod
     def validate_maximum_length(cls, v):
         """
         验证最大上下文长度的有效性
-        
+
         必须是正整数，且通常应该大于max_tokens
         """
         if v <= 0:
             raise ValueError('最大上下文长度必须大于0')
-        
+
         if v > 1000000:  # 设置一个合理的上限
             raise ValueError('最大上下文长度不能超过1000000')
-        
-        return v
 
-    @validator('maximum_length')
-    def validate_length_consistency(cls, v, values):
-        """
-        验证上下文长度与最大token数的一致性
-        
-        上下文长度通常应该大于或等于最大token数
-        """
-        if 'max_tokens' in values and v < values['max_tokens']:
-            raise ValueError('最大上下文长度应该大于或等于最大tokens数')
-        
         return v
 
 
@@ -225,6 +220,7 @@ class CustomModelConfig(BaseModel):
             model_name=request.model_name,
             model_endpoint=request.model_endpoint,
             api_key=request.api_key,
+            model_provider=request.model_provider,
             generation_config={
                 'temperature': request.temperature,
                 'max_tokens': request.max_tokens,

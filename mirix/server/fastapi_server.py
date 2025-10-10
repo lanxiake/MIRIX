@@ -18,6 +18,15 @@ from ..agent.agent_wrapper import AgentWrapper
 from ..functions.mcp_client import StdioServerConfig, get_mcp_client_manager
 from ..services.mcp_marketplace import get_mcp_marketplace
 from ..services.mcp_tool_registry import get_mcp_tool_registry
+from ..schemas.custom_models import (
+    UpdateCustomModelRequest,
+    UpdateCustomModelResponse,
+    DeleteCustomModelResponse,
+    CustomModelDetailResponse,
+    ModelStatusResponse,
+    get_model_id_from_name,
+    validate_custom_models_directory
+)
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +348,7 @@ class MessageRequest(BaseModel):
     voice_files: Optional[List[str]] = None  # Base64 encoded voice files
     memorizing: bool = False
     is_screen_monitoring: Optional[bool] = False
+    user_id: Optional[str] = None  # Optional user ID, defaults to None (uses default user)
 
 
 class MessageResponse(BaseModel):
@@ -392,6 +402,7 @@ class AddCustomModelRequest(BaseModel):
     model_name: str
     model_endpoint: str
     api_key: str
+    model_provider: str = "openai-compatible"  # 新增：模型提供商类型
     temperature: float = 0.7
     max_tokens: int = 4096
     maximum_length: int = 32768
@@ -1186,13 +1197,17 @@ async def add_custom_model(request: AddCustomModelRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
     try:
+        # 根据模型提供商类型设置正确的endpoint_type
+        model_endpoint_type = "openai" if request.model_provider == "openai-compatible" else "local_server"
+        
         # Create config file for the custom model
         config = {
             "agent_name": "mirix",
             "model_name": request.model_name,
             "model_endpoint": request.model_endpoint,
             "api_key": request.api_key,
-            "model_provider": "local_server",
+            "model_provider": request.model_provider,
+            "model_endpoint_type": model_endpoint_type,
             "generation_config": {
                 "temperature": request.temperature,
                 "max_tokens": request.max_tokens,
@@ -1254,6 +1269,227 @@ async def list_custom_models():
     except Exception as e:
         print(f"Error listing custom models: {e}")
         return ListCustomModelsResponse(models=[])
+
+
+@app.get("/models/custom/{model_id}", response_model=CustomModelDetailResponse)
+async def get_custom_model_detail(model_id: str):
+    """获取指定自定义模型的详细配置信息"""
+    try:
+        custom_models_dir = Path.home() / ".mirix" / "custom_models"
+        config_file_path = custom_models_dir / f"{model_id}.yaml"
+        
+        if not config_file_path.exists():
+            return CustomModelDetailResponse(
+                success=False,
+                message=f"模型配置文件不存在: {model_id}",
+                config=None
+            )
+        
+        with open(config_file_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+            
+        # 确保向后兼容性：如果没有model_provider字段，设置默认值
+        if config and "model_provider" not in config:
+            config["model_provider"] = "openai-compatible"
+            
+        return CustomModelDetailResponse(
+            success=True,
+            message="获取模型配置成功",
+            config=config
+        )
+        
+    except Exception as e:
+        print(f"Error getting custom model detail {model_id}: {e}")
+        return CustomModelDetailResponse(
+            success=False,
+            message=f"获取模型配置失败: {str(e)}",
+            config=None
+        )
+
+
+@app.put("/models/custom/{model_id}", response_model=UpdateCustomModelResponse)
+async def update_custom_model(model_id: str, request: UpdateCustomModelRequest):
+    """更新指定的自定义模型配置"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        custom_models_dir = validate_custom_models_directory()
+        old_config_file_path = custom_models_dir / f"{model_id}.yaml"
+        
+        # 检查原配置文件是否存在
+        if not old_config_file_path.exists():
+            return UpdateCustomModelResponse(
+                success=False,
+                message=f"模型配置文件不存在: {model_id}"
+            )
+        
+        # 根据模型提供商类型设置正确的endpoint_type
+        model_endpoint_type = "openai" if getattr(request, 'model_provider', 'openai-compatible') == "openai-compatible" else "local_server"
+        
+        # 创建新的配置
+        new_config = {
+            "agent_name": "mirix",
+            "model_name": request.model_name,
+            "model_endpoint": request.model_endpoint,
+            "api_key": request.api_key,
+            "model_provider": getattr(request, 'model_provider', 'openai-compatible'),
+            "model_endpoint_type": model_endpoint_type,
+            "generation_config": {
+                "temperature": request.temperature,
+                "max_tokens": request.max_tokens,
+                "context_window": request.maximum_length,
+            },
+        }
+        
+        # 生成新的文件名（如果模型名称改变了）
+        new_model_id = get_model_id_from_name(request.model_name)
+        new_config_file_path = custom_models_dir / f"{new_model_id}.yaml"
+        
+        # 保存新配置
+        with open(new_config_file_path, "w", encoding="utf-8") as f:
+            yaml.dump(new_config, f, default_flow_style=False, indent=2, allow_unicode=True)
+        
+        # 如果文件名改变了，删除旧文件
+        if old_config_file_path != new_config_file_path:
+            old_config_file_path.unlink()
+        
+        return UpdateCustomModelResponse(
+            success=True,
+            message=f"模型 '{request.model_name}' 更新成功",
+            old_model_id=model_id if old_config_file_path != new_config_file_path else None,
+            new_model_id=new_model_id if old_config_file_path != new_config_file_path else None
+        )
+        
+    except Exception as e:
+        print(f"Error updating custom model {model_id}: {e}")
+        return UpdateCustomModelResponse(
+            success=False,
+            message=f"更新模型配置失败: {str(e)}"
+        )
+
+
+@app.delete("/models/custom/{model_id}", response_model=DeleteCustomModelResponse)
+async def delete_custom_model(model_id: str):
+    """删除指定的自定义模型配置"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        custom_models_dir = Path.home() / ".mirix" / "custom_models"
+        config_file_path = custom_models_dir / f"{model_id}.yaml"
+        
+        if not config_file_path.exists():
+            return DeleteCustomModelResponse(
+                success=False,
+                message=f"模型配置文件不存在: {model_id}"
+            )
+        
+        # 读取配置以获取模型名称
+        with open(config_file_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        
+        model_name = config.get("model_name", model_id)
+        
+        # 检查模型是否正在使用
+        current_model = agent.get_current_model()
+        current_memory_model = getattr(agent, 'memory_manager', None)
+        current_memory_model_name = None
+        if current_memory_model and hasattr(current_memory_model, 'llm_config'):
+            current_memory_model_name = getattr(current_memory_model.llm_config, 'model', None)
+        
+        is_active_model = current_model == model_name
+        is_active_memory_model = current_memory_model_name == model_name
+        
+        if is_active_model or is_active_memory_model:
+            usage_info = []
+            if is_active_model:
+                usage_info.append("当前聊天模型")
+            if is_active_memory_model:
+                usage_info.append("当前记忆模型")
+            
+            return DeleteCustomModelResponse(
+                success=False,
+                message=f"无法删除正在使用的模型。该模型正被用作: {', '.join(usage_info)}。请先切换到其他模型。",
+                was_active=True
+            )
+        
+        # 删除配置文件
+        config_file_path.unlink()
+        
+        return DeleteCustomModelResponse(
+            success=True,
+            message=f"模型 '{model_name}' 删除成功",
+            was_active=False
+        )
+        
+    except Exception as e:
+        print(f"Error deleting custom model {model_id}: {e}")
+        return DeleteCustomModelResponse(
+            success=False,
+            message=f"删除模型配置失败: {str(e)}",
+            was_active=False
+        )
+
+
+@app.get("/models/custom/{model_id}/status", response_model=ModelStatusResponse)
+async def get_custom_model_status(model_id: str):
+    """获取指定自定义模型的使用状态"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        custom_models_dir = Path.home() / ".mirix" / "custom_models"
+        config_file_path = custom_models_dir / f"{model_id}.yaml"
+        
+        if not config_file_path.exists():
+            return ModelStatusResponse(
+                success=False,
+                model_id=model_id,
+                usage_info="模型配置文件不存在"
+            )
+        
+        # 读取配置以获取模型名称
+        with open(config_file_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        
+        model_name = config.get("model_name", model_id)
+        
+        # 检查模型使用状态
+        current_model = agent.get_current_model()
+        current_memory_model = getattr(agent, 'memory_manager', None)
+        current_memory_model_name = None
+        if current_memory_model and hasattr(current_memory_model, 'llm_config'):
+            current_memory_model_name = getattr(current_memory_model.llm_config, 'model', None)
+        
+        is_active = current_model == model_name
+        is_memory_model = current_memory_model_name == model_name
+        can_delete = not (is_active or is_memory_model)
+        
+        usage_info_parts = []
+        if is_active:
+            usage_info_parts.append("当前聊天模型")
+        if is_memory_model:
+            usage_info_parts.append("当前记忆模型")
+        
+        usage_info = ", ".join(usage_info_parts) if usage_info_parts else "未使用"
+        
+        return ModelStatusResponse(
+            success=True,
+            model_id=model_id,
+            is_active=is_active,
+            is_memory_model=is_memory_model,
+            can_delete=can_delete,
+            usage_info=usage_info
+        )
+        
+    except Exception as e:
+        print(f"Error getting custom model status {model_id}: {e}")
+        return ModelStatusResponse(
+            success=False,
+            model_id=model_id,
+            usage_info=f"获取状态失败: {str(e)}"
+        )
 
 
 @app.get("/timezone/current", response_model=GetTimezoneResponse)

@@ -22,7 +22,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   const [isEditingPersona, setIsEditingPersona] = useState(false);
   const [selectedTemplateInEdit, setSelectedTemplateInEdit] = useState('');
   const [showLocalModelModal, setShowLocalModelModal] = useState(false);
+  const [editingModel, setEditingModel] = useState(null);
   const [customModels, setCustomModels] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [modelToDelete, setModelToDelete] = useState(null);
+  const [isDeletingModel, setIsDeletingModel] = useState(false);
   const [mcpMarketplace, setMcpMarketplace] = useState({ servers: [], categories: [] });
   const [mcpSearchQuery, setMcpSearchQuery] = useState('');
   const [mcpSearchResults, setMcpSearchResults] = useState([]);
@@ -177,6 +181,57 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       console.error('Error fetching custom models:', error);
     }
   }, [settings.serverUrl]);
+
+  // 处理编辑自定义模型
+  const handleEditModel = (modelName) => {
+    setEditingModel(modelName);
+    setShowLocalModelModal(true);
+  };
+
+  // 处理删除自定义模型
+  const handleDeleteModel = (modelName) => {
+    setModelToDelete(modelName);
+    setShowDeleteConfirm(true);
+  };
+
+  // 确认删除模型
+  const confirmDeleteModel = async () => {
+    if (!modelToDelete) return;
+    
+    setIsDeletingModel(true);
+    try {
+      // 从模型名称生成模型ID
+      const modelId = modelToDelete.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const response = await queuedFetch(`${settings.serverUrl}/models/custom/${modelId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // 刷新模型列表
+          fetchCustomModels();
+          setShowDeleteConfirm(false);
+          setModelToDelete(null);
+        } else {
+          alert(result.message || '删除模型失败');
+        }
+      } else {
+        alert('删除模型失败');
+      }
+    } catch (error) {
+      console.error('Error deleting model:', error);
+      alert('删除模型时发生错误');
+    } finally {
+      setIsDeletingModel(false);
+    }
+  };
+
+  // 取消删除
+  const cancelDeleteModel = () => {
+    setShowDeleteConfirm(false);
+    setModelToDelete(null);
+  };
 
   const fetchMcpMarketplace = useCallback(async () => {
     if (!settings.serverUrl) {
@@ -1078,7 +1133,10 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
               </select>
               <button
                 className="add-model-button"
-                onClick={() => setShowLocalModelModal(true)}
+                onClick={() => {
+                  setEditingModel(null);
+                  setShowLocalModelModal(true);
+                }}
                 title={t('settings.descriptions.addModelTooltip')}
                 disabled={isChangingModel}
               >
@@ -1092,6 +1150,38 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
               <span className={`update-message ${modelUpdateMessage.includes('✅') ? 'success' : modelUpdateMessage.includes('Changing') ? 'info' : 'error'}`}>
                 {modelUpdateMessage}
               </span>
+            )}
+            
+            {/* 自定义模型管理 */}
+            {customModels.length > 0 && (
+              <div className="custom-models-section">
+                <h4>{t('settings.customModels')}</h4>
+                <div className="custom-models-list">
+                  {customModels.map(modelName => (
+                    <div key={modelName} className="custom-model-item">
+                      <span className="custom-model-name">{modelName}</span>
+                      <div className="custom-model-actions">
+                        <button
+                          className="edit-model-button"
+                          onClick={() => handleEditModel(modelName)}
+                          title={t('localModel.form.editModel')}
+                          disabled={isChangingModel}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="delete-model-button"
+                          onClick={() => handleDeleteModel(modelName)}
+                          title={t('localModel.form.deleteModel')}
+                          disabled={isChangingModel}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
@@ -1113,7 +1203,10 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
               </select>
               <button
                 className="add-model-button"
-                onClick={() => setShowLocalModelModal(true)}
+                onClick={() => {
+                  setEditingModel(null);
+                  setShowLocalModelModal(true);
+                }}
                 title={t('settings.descriptions.addModelTooltip')}
                 disabled={isChangingMemoryModel}
               >
@@ -1521,14 +1614,50 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       {/* Local Model Modal */}
       <LocalModelModal
         isOpen={showLocalModelModal}
-        onClose={() => setShowLocalModelModal(false)}
+        onClose={() => {
+          setShowLocalModelModal(false);
+          setEditingModel(null);
+        }}
         serverUrl={settings.serverUrl}
+        editingModel={editingModel}
         onSuccess={(modelName) => {
           // Refresh custom models list and optionally switch to the new model
           fetchCustomModels();
-          console.log(`Custom model '${modelName}' added successfully`);
+          console.log(`Custom model '${modelName}' ${editingModel ? 'updated' : 'added'} successfully`);
+          setEditingModel(null);
         }}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content delete-confirm-modal">
+            <div className="modal-header">
+              <h3>{t('localModel.form.deleteModel')}</h3>
+            </div>
+            <div className="modal-body">
+              <p>{t('localModel.form.confirmDelete')}</p>
+              <p><strong>{modelToDelete}</strong></p>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="cancel-button"
+                onClick={cancelDeleteModel}
+                disabled={isDeletingModel}
+              >
+                {t('localModel.form.cancel')}
+              </button>
+              <button
+                className="delete-button"
+                onClick={confirmDeleteModel}
+                disabled={isDeletingModel}
+              >
+                {isDeletingModel ? t('settings.states.deleting') : t('localModel.form.deleteModel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Gmail Credentials Modal */}
       {showGmailModal && (

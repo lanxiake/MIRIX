@@ -55,7 +55,7 @@ class MIRIXAdapter:
         """
         self.config = config
         self.base_url = config.mirix_backend_url.rstrip('/')
-        self.timeout = 15  # 降低超时时间，避免长时间等待
+        self.timeout = 60  # 增加超时时间以支持记忆搜索和复杂操作
         self.client: Optional[httpx.AsyncClient] = None
         self._is_initialized = False
         

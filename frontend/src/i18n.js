@@ -368,15 +368,22 @@ const resources = {
         }
       },
       localModel: {
-        title: 'Add Local Model',
+        title: 'Add Custom Model',
         form: {
+          modelProvider: 'Model Provider',
+          modelProviderDescription: 'Select the type of model provider for automatic configuration',
+          providerOpenAI: 'OpenAI Compatible',
+          providerOllama: 'Ollama Local',
           modelName: 'Model Name',
           modelNamePlaceholder: 'e.g. qwen3-32b',
           modelNameDescription: 'The name identifier for your deployed model',
+          baseUrl: 'Base URL',
+          baseUrlDescription: 'The API base URL for your model service',
           modelEndpoint: 'Model Endpoint',
           modelEndpointPlaceholder: 'e.g. http://10.157.152.40:47283/v1',
           modelEndpointDescription: 'The API endpoint URL for your deployed model',
           apiKey: 'API Key',
+          apiKeyPlaceholder: 'Enter your API key',
           apiKeyDescription: 'Authentication key for your model endpoint',
           temperature: 'Temperature',
           temperatureDescription: 'Controls randomness in responses (0.0 = deterministic, 1.0 = creative)',
@@ -387,12 +394,22 @@ const resources = {
           required: '*',
           cancel: 'Cancel',
           addModel: 'Add Model',
-          adding: 'Adding...'
+          adding: 'Adding...',
+          editModel: 'Edit Model',
+          updating: 'Updating...',
+          deleteModel: 'Delete Model',
+          confirmDelete: 'Are you sure you want to delete this model?'
         },
         errors: {
           modelNameRequired: 'Model name is required',
-          endpointRequired: 'Model endpoint is required',
+          endpointRequired: 'Base URL is required',
           apiKeyRequired: 'API key is required'
+        }
+      },
+      settings: {
+        customModels: 'Custom Models',
+        states: {
+          deleting: 'Deleting...'
         }
       },
       memory: {
@@ -902,15 +919,22 @@ const resources = {
         }
       },
       localModel: {
-        title: '添加本地模型',
+        title: '添加自定义模型',
         form: {
+          modelProvider: '模型提供商',
+          modelProviderDescription: '选择模型提供商类型以自动配置相关参数',
+          providerOpenAI: 'OpenAI兼容',
+          providerOllama: 'Ollama本地',
           modelName: '模型名称',
           modelNamePlaceholder: '例如：qwen3-32b',
           modelNameDescription: '你部署的模型的名称标识符',
+          baseUrl: 'Base URL',
+          baseUrlDescription: '模型服务的API基础URL地址',
           modelEndpoint: '模型端点',
           modelEndpointPlaceholder: '例如：http://10.157.152.40:47283/v1',
           modelEndpointDescription: '你部署的模型的API端点URL',
           apiKey: 'API 密钥',
+          apiKeyPlaceholder: '请输入API密钥',
           apiKeyDescription: '模型端点的认证密钥',
           temperature: '温度',
           temperatureDescription: '控制响应的随机性（0.0 = 确定性，1.0 = 创意性）',
@@ -921,12 +945,22 @@ const resources = {
           required: '*',
           cancel: '取消',
           addModel: '添加模型',
-          adding: '添加中...'
+          adding: '添加中...',
+          editModel: '编辑模型',
+          updating: '更新中...',
+          deleteModel: '删除模型',
+          confirmDelete: '确定要删除这个模型吗？'
         },
         errors: {
           modelNameRequired: '模型名称是必填项',
-          endpointRequired: '模型端点是必填项',
+          endpointRequired: 'Base URL是必填项',
           apiKeyRequired: 'API密钥是必填项'
+        }
+      },
+      settings: {
+        customModels: '自定义模型',
+        states: {
+          deleting: '删除中...'
         }
       },
       memory: {
