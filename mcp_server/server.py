@@ -53,7 +53,26 @@ class MCPServer:
 
         @self.mcp.tool(
             name="memory_add",
-            description="向记忆系统添加新信息"
+            title="向记忆系统添加记忆",
+            description="""向 MIRIX 记忆系统添加新的信息内容。
+
+功能说明：
+- 将用户提供的内容保存到记忆系统中
+- 支持语义化存储，便于后续检索和对话
+
+参数说明：
+- content (str, 必需): 要添加到记忆中的文本内容，支持任意长度的文本
+- user_id (str, 可选): 用户标识符，如果不提供则使用默认用户ID，默认不填写
+
+返回值：
+- 成功时返回确认消息，包含操作状态
+- 失败时返回错误信息和具体原因
+
+使用场景：
+- 保存重要的对话内容或文档
+- 记录用户偏好和个人信息
+- 存储需要长期记忆的知识点
+- 建立个人知识库"""
         )
         async def memory_add(content: str, user_id: str = None) -> str:
             """添加记忆"""
@@ -82,7 +101,28 @@ class MCPServer:
 
         @self.mcp.tool(
             name="memory_chat",
-            description="与记忆系统对话"
+            title="使用自然语言与记忆系统对话获取记忆",
+            description="""使用自然语言与 MIRIX 记忆系统进行智能对话交互。
+功能说明：
+- 基于用户的历史记忆进行上下文感知的对话
+- 自动检索相关记忆内容来增强回答质量
+- 支持多轮对话，保持对话连贯性
+- 结合语义搜索和生成式AI提供智能回复
+
+参数说明：
+- message (str, 必需): 用户的对话消息或问题
+- user_id (str, 可选): 用户标识符，用于获取对应的记忆上下文，默认不填写
+
+返回值：
+- 成功时返回AI生成的回复内容，基于用户记忆和当前问题
+- 失败时返回错误信息和处理建议
+
+使用场景：
+- 询问之前保存的信息
+- 基于历史记忆进行推理和分析
+- 获得个性化的AI助手服务
+- 进行知识问答和信息检索
+- 延续之前的对话主题"""
         )
         async def memory_chat(message: str, user_id: str = None) -> str:
             """记忆对话"""
@@ -123,41 +163,135 @@ class MCPServer:
 
         @self.mcp.tool(
             name="memory_search",
-            description="搜索记忆内容"
+            title="按记忆类型和关键词搜索记忆",
+            description="""
+            搜索记忆系统中的相关内容。
+            此工具允许你根据关键字和指定的记忆类型在用户的记忆系统中检索信息。
+            它会返回与查询最相关的记忆条目，并支持对不同类型记忆的筛选。
+            Args:
+                query (str): 必需。用于搜索记忆内容的关键字或短语，多个关键词，使用空格分隔。
+                             例如: "用户喜欢的编程语言", "项目截止日期", "上次会议讨论的要点"
+                memory_types (Optional[List[str]]): 可选。一个字符串列表，指定要搜索的记忆类型。
+                                                     如果未提供，则会搜索所有支持的记忆类型。
+                                                     支持的类型包括:
+                                                     - "core": 核心记忆 (如用户基本偏好、长期目标)
+                                                     - "episodic": 情景记忆 (如过去的事件、对话片段)
+                                                     - "semantic": 语义记忆 (如知识、事实、概念)
+                                                     - "procedural": 程序记忆 (如技能、操作步骤)
+                                                     - "resource": 资源记忆 (如文档、文件、链接)
+                                                     - "credentials": 凭证记忆 (如API密钥、敏感信息 - 但内容会被掩码)
+                                                     例如: `["semantic", "resource"]`
+                user_id (Optional[str]): 可选。指定要搜索哪个用户的记忆。如果未提供，将使用默认用户ID。
+                limit (int): 可选。限制返回的记忆条目数量。默认为 10。最大值为 50。
+
+            Returns:
+                str: 格式化的搜索结果字符串。
+                     如果找到相关记忆，会返回每个记忆的类型、摘要或内容片段。
+                     如果未找到，则返回相应的提示信息。
+                     如果参数无效或发生错误，会返回错误信息。
+
+            Examples:
+                1. 搜索关于“项目计划”的所有类型记忆:
+                   `memory_search(query="项目计划")`
+
+                2. 搜索“Python 语言”的语义记忆和程序记忆:
+                   `memory_search(query="Python 语言", memory_types=["semantic", "procedural"])`
+
+                3. 搜索“用户偏好”的核心记忆，并限制返回 3 条结果:
+                   `memory_search(query="用户偏好", memory_types=["core"], limit=3)`
+            """
+
+
         )
-        async def memory_search(query: str, user_id: str = None, limit: int = 5) -> str:
-            """搜索记忆"""
+        async def memory_search(
+            query: str, 
+            memory_types: Optional[List[str]] = None, 
+            user_id: Optional[str] = None, 
+            limit: int = 10
+        ) -> str:
+            """
+            搜索记忆系统中的相关内容。
+            
+            此工具允许你根据关键字和指定的记忆类型在用户的记忆系统中检索信息。
+            它会返回与查询最相关的记忆条目，并支持对不同类型记忆的筛选。
+
+            Args:
+                query (str): 必需。用于搜索记忆内容的关键字或短语，因为只使用了关键词搜索。
+                             例如: "用户喜欢的编程语言", "项目截止日期", "上次会议讨论的要点"
+                memory_types (Optional[List[str]]): 可选。一个字符串列表，指定要搜索的记忆类型。
+                                                     如果未提供，则会搜索所有支持的记忆类型。
+                                                     支持的类型包括:
+                                                     - "core": 核心记忆 (如用户基本偏好、长期目标)
+                                                     - "episodic": 情景记忆 (如过去的事件、对话片段)
+                                                     - "semantic": 语义记忆 (如知识、事实、概念)
+                                                     - "procedural": 程序记忆 (如技能、操作步骤)
+                                                     - "resource": 资源记忆 (如文档、文件、链接)
+                                                     - "credentials": 凭证记忆 (如API密钥、敏感信息 - 但内容会被掩码)
+                                                     例如: `["semantic", "resource"]`
+                user_id (Optional[str]): 可选。指定要搜索哪个用户的记忆。如果未提供，将使用默认用户ID。
+                limit (int): 可选。限制返回的记忆条目数量。默认为 10。最大值为 50。
+
+            Returns:
+                str: 格式化的搜索结果字符串。
+                     如果找到相关记忆，会返回每个记忆的类型、摘要或内容片段。
+                     如果未找到，则返回相应的提示信息。
+                     如果参数无效或发生错误，会返回错误信息。
+
+            Examples:
+                1. 搜索关于“项目计划”的所有类型记忆:
+                   `memory_search(query="项目计划")`
+
+                2. 搜索“Python 语言”的语义记忆和程序记忆:
+                   `memory_search(query="Python 语言", memory_types=["semantic", "procedural"])`
+
+                3. 搜索“用户偏好”的核心记忆，并限制返回 3 条结果:
+                   `memory_search(query="用户偏好", memory_types=["core"], limit=3)`
+            """
             try:
                 if not user_id:
                     user_id = self.config.default_user_id
 
-                logger.info(f"搜索记忆: user_id={user_id}, query={query}, limit={limit}")
+                logger.info(f"搜索记忆: user_id={user_id}, query={query}, types={memory_types}, limit={limit}")
 
-                # 调用MIRIX适配器搜索记忆
-                search_data = {
-                    "query": query,
-                    "user_id": user_id,
-                    "limit": limit
-                }
-                result = await self.mirix_adapter.search_memory(search_data)
+                # 使用新的分类搜索功能
+                if memory_types:
+                    # 验证记忆类型
+                    valid_types = ["core", "episodic", "semantic", "procedural", "resource", "credentials"]
+                    invalid_types = [t for t in memory_types if t not in valid_types]
+                    if invalid_types:
+                        return f"无效的记忆类型: {', '.join(invalid_types)}。支持的类型: {', '.join(valid_types)}"
+                    
+                    result = await self.mirix_adapter.search_memories_by_types(
+                        query=query,
+                        memory_types=memory_types,
+                        limit=limit,
+                        user_id=user_id
+                    )
+                else:
+                    # 搜索所有类型
+                    all_types = ["core", "episodic", "semantic", "procedural", "resource", "credentials"]
+                    result = await self.mirix_adapter.search_memories_by_types(
+                        query=query,
+                        memory_types=all_types,
+                        limit=limit,
+                        user_id=user_id
+                    )
 
                 if result.get("success"):
-                    search_results = result.get("results", {})
-                    # 从搜索结果中提取记忆内容
-                    if isinstance(search_results, dict):
-                        # 提取实际的搜索响应
-                        actual_response = search_results.get("response", "")
-                        if actual_response and "ERROR_RESPONSE_FAILED" not in actual_response:
-                            return f"搜索结果:\n{actual_response}"
-                        elif "ERROR_RESPONSE_FAILED" in str(search_results):
-                            return "搜索出现错误，请稍后重试"
+                    memories = result.get("all_memories", [])
+                    if memories:
+                        # 格式化搜索结果
+                        formatted_results = []
+                        for memory in memories:
+                            memory_type = memory.get("memory_type", "unknown")
+                            content = memory.get("summary") or memory.get("details") or memory.get("content") or memory.get("title") or memory.get("filename", "")
+                            if content:
+                                formatted_results.append(f"[{memory_type}] {content[:200]}...")
+                        
+                        if formatted_results:
+                            return f"找到 {len(memories)} 条相关记忆:\n\n" + "\n\n".join(formatted_results)
                         else:
-                            return "未找到相关记忆"
-                    elif isinstance(search_results, str):
-                        if "ERROR_RESPONSE_FAILED" in search_results:
-                            return "搜索出现错误，请稍后重试"
-                        else:
-                            return f"搜索结果:\n{search_results}"
+                            return "未找到相关记忆内容"
                     else:
                         return "未找到相关记忆"
                 else:
@@ -168,48 +302,116 @@ class MCPServer:
                 return f"搜索记忆时发生错误: {str(e)}"
 
         @self.mcp.tool(
-            name="memory_get_profile",
-            description="获取用户记忆档案"
+            name="resource_upload",
+            description=  """
+            上传文档或文件到 MIRIX 资源记忆系统。
+            
+            此工具允许你将各种格式的文档（如文本、Markdown、Excel、CSV、PDF等）上传到资源记忆系统。
+            系统会自动检测文件类型并进行处理。文件内容可以是纯文本或 Base64 编码的字符串。
+
+            Args:
+                file_name (str): 必需。要上传的文件名，包括文件扩展名（例如: `report.pdf`, `data.csv`, `notes.md`）。
+                                 扩展名有助于系统准确识别文件类型。
+                file_content (str): 必需。文件内容的字符串表示。可以是文件的原始文本内容，
+                                    也可以是 Base64 编码的二进制内容（工具会自动检测并解码）。
+                file_type (Optional[str]): 可选。文件的 MIME 类型（例如: `application/pdf`, `text/csv`, `text/markdown`）。
+                                           如果提供，将优先使用此类型；否则，工具会尝试从文件名或内容自动推断。
+                                           支持的类型包括但不限于: `text/plain`, `text/markdown`, `text/csv`,
+                                           `application/vnd.ms-excel`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+                                           `application/json`, `application/xml`, `text/html`, `application/pdf`。
+                description (Optional[str]): 可选。对文件内容的简短描述，帮助更好地理解和检索文件。
+                                            例如: "2023年第四季度销售报告", "项目需求规格书V1.0"。
+                user_id (Optional[str]): 可选。指定此资源所属的用户ID。如果未提供，将使用默认用户ID。
+
+            Returns:
+                str: 包含上传结果的格式化字符串。成功时会返回文件名、文档ID、文件大小和处理状态；
+                     失败时会返回详细的错误信息。
+
+            Examples:
+                1. 上传一份简单的 Markdown 文档:
+                   `resource_upload(file_name="meeting_notes.md", file_content="# 会议纪要\n\n讨论了项目进展和下一步计划。")`
+
+                2. 上传 Base64 编码的 CSV 文件（假设 `base64_csv_content` 是 Base64 字符串）:
+                   `resource_upload(file_name="users.csv", file_content=base64_csv_content, file_type="text/csv", description="导出用户数据")`
+
+                3. 上传一个 PDF 文件（需要将PDF内容转换为Base64字符串）:
+                   `resource_upload(file_name="report.pdf", file_content=base64_pdf_content, file_type="application/pdf")`
+            """
         )
-        async def memory_get_profile(user_id: str = None) -> str:
-            """获取用户档案"""
+        async def resource_upload(
+            file_name: str,
+            file_content: str,
+            file_type: Optional[str] = None,
+            description: Optional[str] = None,
+            user_id: Optional[str] = None
+        ) -> str:
+            """
+            上传文档或文件到 MIRIX 资源记忆系统。
+            
+            此工具允许你将各种格式的文档（如文本、Markdown、Excel、CSV、PDF等）上传到资源记忆系统。
+            系统会自动检测文件类型并进行处理。文件内容可以是纯文本或 Base64 编码的字符串。
+
+            Args:
+                file_name (str): 必需。要上传的文件名，包括文件扩展名（例如: `report.pdf`, `data.csv`, `notes.md`）。
+                                 扩展名有助于系统准确识别文件类型。
+                file_content (str): 必需。文件内容的字符串表示。可以是文件的原始文本内容，
+                                    也可以是 Base64 编码的二进制内容（工具会自动检测并解码）。
+                file_type (Optional[str]): 必需。文件的 MIME 类型（例如: `application/pdf`, `text/csv`, `text/markdown`）。
+                                           如果提供，将优先使用此类型；否则，工具会尝试从文件名或内容自动推断。
+                                           支持的类型包括但不限于: `text/plain`, `text/markdown`, `text/csv`,
+                                           `application/vnd.ms-excel`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+                                           `application/json`, `application/xml`, `text/html`, `application/pdf`。
+                description (Optional[str]): 可选。对文件内容的简短描述，帮助更好地理解和检索文件。
+                                            例如: "2023年第四季度销售报告", "项目需求规格书V1.0"。
+                user_id (Optional[str]): 可选。指定此资源所属的用户ID。如果未提供，将使用默认用户ID。
+
+            Returns:
+                str: 包含上传结果的格式化字符串。成功时会返回文件名、文档ID、文件大小和处理状态；
+                     失败时会返回详细的错误信息。
+
+            Examples:
+                1. 上传一份简单的 Markdown 文档:
+                   `resource_upload(file_name="meeting_notes.md", file_content="# 会议纪要\n\n讨论了项目进展和下一步计划。")`
+
+                2. 上传 Base64 编码的 CSV 文件（假设 `base64_csv_content` 是 Base64 字符串）:
+                   `resource_upload(file_name="users.csv", file_content=base64_csv_content, file_type="text/csv", description="导出用户数据")`
+
+                3. 上传一个 PDF 文件（需要将PDF内容转换为Base64字符串）:
+                   `resource_upload(file_name="report.pdf", file_content=base64_pdf_content, file_type="application/pdf")`
+            """
             try:
                 if not user_id:
                     user_id = self.config.default_user_id
 
-                logger.info(f"获取用户档案: user_id={user_id}")
+                logger.info(f"上传资源: user_id={user_id}, file_name={file_name}, file_type={file_type}")
 
-                # 调用MIRIX适配器获取用户档案
-                profile_data = {
-                    "user_id": user_id,
-                    "include_memories": True
+                # 调用MIRIX适配器上传文档
+                upload_data = {
+                    "file_name": file_name,
+                    "content": file_content,  # 内容将在适配器中进行Base64编码处理
+                    "file_type": file_type,
+                    "description": description,
+                    "user_id": user_id
                 }
-                result = await self.mirix_adapter.get_user_profile(profile_data)
+                result = await self.mirix_adapter.upload_document(upload_data)
 
                 if result.get("success"):
-                    profile_data = result.get("profile", {})
-                    # 处理不同格式的档案数据
-                    if isinstance(profile_data, dict) and "response" in profile_data:
-                        # 如果包含实际的响应内容
-                        actual_response = profile_data.get("response", "")
-                        if actual_response:
-                            return f"用户档案信息:\n{actual_response}"
+                    file_info = result.get("file_info", {})
+                    document_id = file_info.get("document_id", "")
+                    content_size = file_info.get("content_size", 0)
                     
-                    # 如果是标准格式的档案数据
-                    if isinstance(profile_data, dict) and any(key in profile_data for key in ['user_id', 'memory_count']):
-                        return f"用户档案:\n" + \
-                               f"用户ID: {profile_data.get('user_id', user_id)}\n" + \
-                               f"记忆数量: {profile_data.get('memory_count', 'N/A')}\n" + \
-                               f"最后活动: {profile_data.get('last_activity', 'N/A')}"
-                    
-                    # 其他情况，直接返回内容
-                    return f"用户档案:\n{str(profile_data)}"
+                    return f"文件上传成功!\n" + \
+                           f"文件名: {file_name}\n" + \
+                           f"文档ID: {document_id}\n" + \
+                           f"文件大小: {content_size} 字节\n" + \
+                           f"状态: 已处理并存储到资源记忆系统"
                 else:
-                    return f"获取档案失败: {result.get('error', '未知错误')}"
+                    return f"文件上传失败: {result.get('error', '未知错误')}"
 
             except Exception as e:
-                logger.error(f"获取用户档案时发生错误: {e}", exc_info=True)
-                return f"获取用户档案时发生错误: {str(e)}"
+                logger.error(f"上传资源时发生错误: {e}", exc_info=True)
+                return f"上传资源时发生错误: {str(e)}"
+
     
     async def run_sse(self):
         """运行 SSE MCP 服务器"""

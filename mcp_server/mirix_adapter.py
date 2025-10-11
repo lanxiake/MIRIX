@@ -383,54 +383,370 @@ class MIRIXAdapter:
                     "response": None
                 }
     
-    async def get_user_profile(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+    # ==================== 分类记忆查询接口 ====================
+    
+    async def get_episodic_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        获取用户档案信息
+        获取情景记忆（过去发生的事件）
         
         Args:
-            profile_data: 档案查询数据，包含 user_id, include_memories 等字段
+            user_id: 用户ID（可选）
             
         Returns:
-            Dict[str, Any]: 用户档案信息
+            Dict[str, Any]: 情景记忆列表
         """
         try:
-            # 确保 profile_data 是字典类型
-            if isinstance(profile_data, str):
-                profile_data = {"user_id": profile_data}
-            elif profile_data is None:
-                profile_data = {}
-            
-            user_id = profile_data.get("user_id", self.config.default_user_id)
-            include_memories = profile_data.get("include_memories", True)
-            
-            # 构建档案查询消息 - 使用自然语言查询方式
-            if include_memories:
-                message = f"请总结用户 {user_id} 的档案信息，包括我记住的所有相关记忆和信息"
-            else:
-                message = f"请总结用户 {user_id} 的基本档案信息"
-            
-            request_data = {
-                "message": message,
-                "memorizing": False  # 档案查询不触发新记忆
-                # "user_id": user_id  # 暂时注释掉，直到修复用户上下文问题
-            }
-            
-            result = await self._make_request("POST", "/send_message", data=request_data)
-            
+            result = await self._make_request("GET", "/memory/episodic")
             return {
                 "success": True,
-                "user_id": user_id,
-                "include_memories": include_memories,
-                "profile": result
+                "memory_type": "episodic",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
             }
-            
         except Exception as e:
-            logger.error(f"获取用户档案失败: {e}")
+            logger.error(f"获取情景记忆失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "user_id": profile_data.get("user_id", "unknown"),
-                "profile": None
+                "memory_type": "episodic",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def get_semantic_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取语义记忆（知识和概念）
+        
+        Args:
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 语义记忆列表
+        """
+        try:
+            result = await self._make_request("GET", "/memory/semantic")
+            return {
+                "success": True,
+                "memory_type": "semantic",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
+            }
+        except Exception as e:
+            logger.error(f"获取语义记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "memory_type": "semantic",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def get_procedural_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取程序记忆（技能和步骤）
+        
+        Args:
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 程序记忆列表
+        """
+        try:
+            result = await self._make_request("GET", "/memory/procedural")
+            return {
+                "success": True,
+                "memory_type": "procedural",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
+            }
+        except Exception as e:
+            logger.error(f"获取程序记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "memory_type": "procedural",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def get_resource_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取资源记忆（文档和文件）
+        
+        Args:
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 资源记忆列表
+        """
+        try:
+            result = await self._make_request("GET", "/memory/resources")
+            return {
+                "success": True,
+                "memory_type": "resource",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
+            }
+        except Exception as e:
+            logger.error(f"获取资源记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "memory_type": "resource",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def get_core_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取核心记忆（对用户的核心理解）
+        
+        Args:
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 核心记忆列表
+        """
+        try:
+            result = await self._make_request("GET", "/memory/core")
+            return {
+                "success": True,
+                "memory_type": "core",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
+            }
+        except Exception as e:
+            logger.error(f"获取核心记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "memory_type": "core",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def get_credentials_memory(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取凭证记忆（知识库，敏感信息已加密）
+        
+        Args:
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 凭证记忆列表
+        """
+        try:
+            result = await self._make_request("GET", "/memory/credentials")
+            return {
+                "success": True,
+                "memory_type": "credentials",
+                "memories": result if isinstance(result, list) else [],
+                "count": len(result) if isinstance(result, list) else 0
+            }
+        except Exception as e:
+            logger.error(f"获取凭证记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "memory_type": "credentials",
+                "memories": [],
+                "count": 0
+            }
+    
+    async def search_memories_by_types(
+        self, 
+        query: str, 
+        memory_types: List[str], 
+        limit: int = 10,
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        根据记忆类型搜索记忆
+        
+        Args:
+            query: 搜索查询字符串
+            memory_types: 要搜索的记忆类型列表
+            limit: 每种类型的结果数量限制
+            user_id: 用户ID（可选）
+            
+        Returns:
+            Dict[str, Any]: 搜索结果
+        """
+        try:
+            all_memories = []
+            search_results = {}
+            
+            # 定义记忆类型到方法的映射
+            type_methods = {
+                "episodic": self.get_episodic_memory,
+                "semantic": self.get_semantic_memory,
+                "procedural": self.get_procedural_memory,
+                "resource": self.get_resource_memory,
+                "core": self.get_core_memory,
+                "credentials": self.get_credentials_memory
+            }
+            
+            # 为每种记忆类型获取数据
+            for memory_type in memory_types:
+                if memory_type in type_methods:
+                    try:
+                        result = await type_methods[memory_type](user_id)
+                        if result.get("success"):
+                            memories = result.get("memories", [])
+                            # 简单的关键字过滤
+                            filtered_memories = self._filter_memories_by_query(memories, query)
+                            # 限制结果数量
+                            limited_memories = filtered_memories[:limit]
+                            
+                            search_results[memory_type] = {
+                                "memories": limited_memories,
+                                "count": len(limited_memories),
+                                "total_available": len(memories)
+                            }
+                            
+                            # 为每个记忆添加类型标识
+                            for memory in limited_memories:
+                                memory["memory_type"] = memory_type
+                                all_memories.append(memory)
+                        else:
+                            search_results[memory_type] = {
+                                "memories": [],
+                                "count": 0,
+                                "error": result.get("error", "未知错误")
+                            }
+                    except Exception as e:
+                        logger.warning(f"搜索 {memory_type} 记忆时出错: {e}")
+                        search_results[memory_type] = {
+                            "memories": [],
+                            "count": 0,
+                            "error": str(e)
+                        }
+            
+            return {
+                "success": True,
+                "query": query,
+                "memory_types": memory_types,
+                "results": search_results,
+                "all_memories": all_memories,
+                "total_count": len(all_memories)
+            }
+            
+        except Exception as e:
+            logger.error(f"按类型搜索记忆失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "query": query,
+                "memory_types": memory_types,
+                "results": {},
+                "all_memories": [],
+                "total_count": 0
+            }
+    
+    def _filter_memories_by_query(self, memories: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+        """
+        根据查询字符串过滤记忆，支持多关键词搜索
+        
+        Args:
+            memories: 记忆列表
+            query: 查询字符串，多个关键词用空格分隔
+                  例如: "电脑 水果" 将搜索同时包含"电脑"和"水果"的记忆
+            
+        Returns:
+            List[Dict[str, Any]]: 过滤后的记忆列表
+        """
+        if not query or not memories:
+            return memories
+        
+        # 将查询字符串分割为多个关键词，去除空白
+        keywords = [keyword.strip().lower() for keyword in query.split() if keyword.strip()]
+        if not keywords:
+            return memories
+        
+        filtered_memories = []
+        
+        for memory in memories:
+            # 获取所有可搜索字段的文本内容
+            searchable_fields = [
+                memory.get("summary", ""),
+                memory.get("details", ""),
+                memory.get("content", ""),
+                memory.get("title", ""),
+                memory.get("filename", ""),
+                memory.get("name", ""),
+                str(memory.get("tree_path", [])),
+            ]
+            
+            # 将所有字段合并为一个搜索文本
+            combined_text = " ".join(str(field) for field in searchable_fields).lower()
+            
+            # 检查是否所有关键词都在文本中出现（AND模式）
+            all_keywords_found = all(keyword in combined_text for keyword in keywords)
+            
+            if all_keywords_found:
+                filtered_memories.append(memory)
+        
+        return filtered_memories
+    
+    async def upload_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        上传文档到资源记忆系统
+        
+        Args:
+            document_data: 文档数据，包含 file_name, file_type, content 等字段
+            
+        Returns:
+            Dict[str, Any]: 上传结果
+        """
+        try:
+            # 验证必需字段
+            required_fields = ["file_name", "file_type", "content"]
+            for field in required_fields:
+                if field not in document_data:
+                    raise ValueError(f"缺少必需字段: {field}")
+            
+            # 构建上传请求数据
+            # 需要将文本内容编码为Base64，因为后端API期望Base64格式
+            import base64
+            content = document_data["content"]
+            
+            # 确保内容是字符串类型
+            if not isinstance(content, str):
+                content = str(content)
+            
+            # 将字符串编码为UTF-8字节，然后转换为Base64
+            try:
+                content_bytes = content.encode('utf-8')
+                base64_content = base64.b64encode(content_bytes).decode('ascii')
+                logger.debug(f"成功将内容编码为Base64，原始长度: {len(content)}, 编码后长度: {len(base64_content)}")
+            except Exception as e:
+                logger.error(f"Base64编码失败: {e}")
+                raise ValueError(f"文件内容编码失败: {e}")
+            
+            upload_request = {
+                "file_name": document_data["file_name"],
+                "file_type": document_data["file_type"],
+                "content": base64_content,  # 使用Base64编码的内容
+                "user_id": document_data.get("user_id"),
+                "description": document_data.get("description")
+            }
+            
+            result = await self._make_request("POST", "/documents/upload", data=upload_request)
+            
+            return {
+                "success": True,
+                "message": "文档上传成功",
+                "document_id": result.get("document_id"),
+                "processed_content": result.get("processed_content"),
+                "upload_result": result
+            }
+            
+        except Exception as e:
+            logger.error(f"文档上传失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "文档上传失败"
             }
     
     # ==================== 系统状态接口 ====================

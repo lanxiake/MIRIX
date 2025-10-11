@@ -37,7 +37,7 @@ VALID_MEMORY_TYPES = [
     "semantic",       # 语义记忆：知识、概念、事实
     "procedural",     # 程序记忆：技能、习惯、流程
     "resource",       # 资源记忆：文件、链接、工具
-    "knowledge_vault" # 知识库：结构化知识存储
+    "credentials"     # 凭证记忆：知识库，敏感信息
 ]
 
 # 搜索配置常量
@@ -207,6 +207,95 @@ class MemorySearchTool:
             }
         }
     
+    def format_typed_search_response(
+        self,
+        search_result: Dict[str, Any],
+        query: str
+    ) -> Dict[str, Any]:
+        """
+        格式化分类搜索响应
+        
+        Args:
+            search_result: MIRIX 后端返回的分类搜索结果
+            query: 原始查询字符串
+            
+        Returns:
+            Dict[str, Any]: 格式化后的响应
+        """
+        if not search_result.get("success"):
+            return {
+                "success": False,
+                "error": search_result.get("error", "搜索失败"),
+                "query": query,
+                "memories": [],
+                "total_count": 0,
+                "returned_count": 0,
+                "search_metadata": {}
+            }
+        
+        all_memories = search_result.get("all_memories", [])
+        results_by_type = search_result.get("results", {})
+        
+        # 为每个记忆添加相关性评分（基于匹配程度）
+        for memory in all_memories:
+            memory["relevance_score"] = self._calculate_relevance_score(memory, query)
+        
+        # 按相关性排序
+        all_memories.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+        
+        return {
+            "success": True,
+            "query": query,
+            "memories": all_memories,
+            "total_count": search_result.get("total_count", len(all_memories)),
+            "returned_count": len(all_memories),
+            "results_by_type": results_by_type,
+            "search_metadata": {
+                "query_length": len(query),
+                "memory_types_searched": list(results_by_type.keys()),
+                "has_more_results": any(
+                    result.get("total_available", 0) > result.get("count", 0)
+                    for result in results_by_type.values()
+                    if isinstance(result, dict)
+                )
+            }
+        }
+    
+    def _calculate_relevance_score(self, memory: Dict[str, Any], query: str) -> float:
+        """
+        计算记忆与查询的相关性评分
+        
+        Args:
+            memory: 记忆对象
+            query: 查询字符串
+            
+        Returns:
+            float: 相关性评分 (0.0 - 1.0)
+        """
+        if not query:
+            return 0.5
+        
+        query_lower = query.lower()
+        score = 0.0
+        
+        # 检查不同字段的匹配程度
+        field_weights = {
+            "title": 0.3,
+            "summary": 0.25,
+            "details": 0.2,
+            "content": 0.15,
+            "filename": 0.1
+        }
+        
+        for field, weight in field_weights.items():
+            field_value = str(memory.get(field, "")).lower()
+            if field_value and query_lower in field_value:
+                # 计算匹配度（查询词在字段中的比例）
+                match_ratio = len(query_lower) / len(field_value) if field_value else 0
+                score += weight * min(match_ratio * 2, 1.0)  # 最大为权重值
+        
+        return min(score, 1.0)
+    
     async def search_memory(
         self,
         query: str,
@@ -237,19 +326,34 @@ class MemorySearchTool:
             if not user_id:
                 user_id = "default_user"
             
-            # 准备搜索请求
-            search_data = self.prepare_search_request(validated_params, user_id)
-            
             self.logger.info(
                 f"开始搜索记忆: query='{validated_params['query'][:50]}...', "
                 f"types={validated_params['memory_types']}, limit={validated_params['limit']}"
             )
             
-            # 调用 MIRIX 后端搜索记忆
-            search_result = await self.mirix_adapter.search_memory(search_data)
-            
-            # 格式化响应
-            response = self.format_search_response(search_result, validated_params["query"])
+            # 如果指定了记忆类型，使用分类搜索
+            if validated_params['memory_types']:
+                search_result = await self.mirix_adapter.search_memories_by_types(
+                    query=validated_params['query'],
+                    memory_types=validated_params['memory_types'],
+                    limit=validated_params['limit'],
+                    user_id=user_id
+                )
+                
+                # 格式化分类搜索响应
+                response = self.format_typed_search_response(search_result, validated_params["query"])
+            else:
+                # 如果没有指定类型，搜索所有类型
+                all_types = VALID_MEMORY_TYPES.copy()
+                search_result = await self.mirix_adapter.search_memories_by_types(
+                    query=validated_params['query'],
+                    memory_types=all_types,
+                    limit=validated_params['limit'],
+                    user_id=user_id
+                )
+                
+                # 格式化分类搜索响应
+                response = self.format_typed_search_response(search_result, validated_params["query"])
             
             self.logger.info(
                 f"记忆搜索完成: 找到 {response['returned_count']} 条记忆 "

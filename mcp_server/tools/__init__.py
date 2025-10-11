@@ -5,7 +5,7 @@
 
 主要组件：
 1. ToolRegistry - 工具注册和管理
-2. 记忆工具 - memory_add, memory_search, memory_chat, memory_get_profile
+2. 记忆工具 - memory_add, memory_search, memory_chat, resource_upload
 3. 工具元数据和配置
 4. 统一的工具执行接口
 
@@ -45,7 +45,7 @@ from .registry import (
 from .memory_add import MemoryAddTool, memory_add, TOOL_METADATA as MEMORY_ADD_METADATA
 from .memory_search import MemorySearchTool, memory_search, TOOL_METADATA as MEMORY_SEARCH_METADATA
 from .memory_chat import MemoryChatTool, memory_chat, TOOL_METADATA as MEMORY_CHAT_METADATA
-from .memory_get_profile import MemoryGetProfileTool, memory_get_profile, TOOL_METADATA as MEMORY_GET_PROFILE_METADATA
+from .resource_upload import ResourceUploadTool, resource_upload, TOOL_METADATA as RESOURCE_UPLOAD_METADATA
 
 # 导入记忆管理核心
 from .memory import (
@@ -65,7 +65,7 @@ TOOLS_METADATA = {
     "memory_add": MEMORY_ADD_METADATA,
     "memory_search": MEMORY_SEARCH_METADATA,
     "memory_chat": MEMORY_CHAT_METADATA,
-    "memory_get_profile": MEMORY_GET_PROFILE_METADATA
+    "resource_upload": RESOURCE_UPLOAD_METADATA
 }
 
 # 导出的工具类
@@ -73,7 +73,7 @@ TOOL_CLASSES = {
     "memory_add": MemoryAddTool,
     "memory_search": MemorySearchTool,
     "memory_chat": MemoryChatTool,
-    "memory_get_profile": MemoryGetProfileTool
+    "resource_upload": ResourceUploadTool
 }
 
 # 导出的工具函数
@@ -81,7 +81,7 @@ TOOL_FUNCTIONS = {
     "memory_add": memory_add,
     "memory_search": memory_search,
     "memory_chat": memory_chat,
-    "memory_get_profile": memory_get_profile
+    "resource_upload": resource_upload
 }
 
 # 导出的公共接口
@@ -98,13 +98,13 @@ __all__ = [
     "MemoryAddTool",
     "MemorySearchTool", 
     "MemoryChatTool",
-    "MemoryGetProfileTool",
+    "ResourceUploadTool",
     "MemoryManager",
     
     # 工具函数
     "add_memory",
     "search_memory",
-    "get_memory_profile", 
+    "resource_upload", 
     "chat_with_memory",
     
     # 元数据和配置

@@ -38,7 +38,6 @@ from ..utils import measure_time_async, get_logger, validate_required_fields
 from .memory_add import MemoryAddTool, VALID_MEMORY_TYPES
 from .memory_search import MemorySearchTool
 from .memory_chat import MemoryChatTool
-from .memory_get_profile import MemoryGetProfileTool
 
 # 配置日志
 logger = get_logger(__name__)
@@ -98,7 +97,6 @@ class MemoryManager:
         self.add_tool = MemoryAddTool(mirix_adapter)
         self.search_tool = MemorySearchTool(mirix_adapter)
         self.chat_tool = MemoryChatTool(mirix_adapter)
-        self.profile_tool = MemoryGetProfileTool(mirix_adapter)
         
         # 缓存配置
         self._stats_cache: Optional[MemoryStats] = None
@@ -266,21 +264,13 @@ class MemoryManager:
                 include_context=True
             )
             
-            # 获取用户配置文件
-            profile_data = None
-            if include_profile:
-                try:
-                    profile_result = await self.profile_tool.execute()
-                    if profile_result.get("success"):
-                        profile_data = profile_result["data"]
-                except Exception as e:
-                    logger.warning(f"获取用户配置文件失败: {e}")
+            # 注意：用户配置文件功能已移除
             
             # 执行对话
             result = await self.chat_tool.execute(
                 message=message,
                 context_memories=search_result.memories,
-                user_profile=profile_data
+                user_profile=None
             )
             
             logger.info("记忆对话完成")
@@ -609,10 +599,4 @@ MEMORY_TOOLS_METADATA = {
         "category": "memory", 
         "manager_method": "chat_with_memory"
     },
-    "memory_get_profile": {
-        "name": "memory_get_profile",
-        "description": "获取用户配置文件信息",
-        "category": "memory",
-        "manager_method": "get_profile"
-    }
 }
