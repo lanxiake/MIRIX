@@ -912,4 +912,229 @@
   }
 }
 
+/* Memory management styles */
+.memory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.memory-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.episodic-memory:hover .memory-actions,
+.semantic-memory:hover .memory-actions,
+.procedural-memory:hover .memory-actions,
+.resource-memory:hover .memory-actions,
+.core-memory:hover .memory-actions,
+.credential-memory:hover .memory-actions {
+  opacity: 1;
+}
+
+.edit-memory-btn,
+.delete-memory-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+}
+
+.edit-memory-btn:hover {
+  background-color: #e3f2fd;
+  transform: scale(1.1);
+}
+
+.delete-memory-btn:hover:not(:disabled) {
+  background-color: #ffebee;
+  transform: scale(1.1);
+}
+
+.delete-memory-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Delete confirmation modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  color: #d32f2f;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modal-content p {
+  margin: 0 0 20px 0;
+  color: #555;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.cancel-button,
+.delete-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.cancel-button {
+  background-color: #f5f5f5;
+  color: #555;
+}
+
+.cancel-button:hover {
+  background-color: #e0e0e0;
+}
+
+.delete-button {
+  background-color: #d32f2f;
+  color: white;
+}
+
+.delete-button:hover {
+  background-color: #b71c1c;
+}
+
+/* Adjust existing memory item styles to accommodate new header structure */
+.episodic-memory .memory-header .memory-timestamp,
+.semantic-memory .memory-header .memory-title,
+.procedural-memory .memory-header .memory-title,
+.resource-memory .memory-header .memory-filename,
+.credential-memory .memory-header .memory-credential-name {
+  flex: 1;
+  margin-right: 8px;
+}
+
+/* Memory editing styles */
+.memory-edit-form {
+  margin: 8px 0;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.edit-field {
+  margin-bottom: 12px;
+}
+
+.edit-field label {
+  display: block;
+  font-weight: 500;
+  color: #495057;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.edit-title-input,
+.edit-summary-input,
+.edit-details-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.edit-title-input {
+  min-height: 36px;
+}
+
+.edit-summary-input {
+  min-height: 60px;
+}
+
+.edit-details-input {
+  min-height: 80px;
+}
+
+.edit-title-input:focus,
+.edit-summary-input:focus,
+.edit-details-input:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.save-edit-btn,
+.cancel-edit-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.save-edit-btn {
+  background-color: #28a745;
+  color: white;
+}
+
+.save-edit-btn:hover {
+  background-color: #218838;
+}
+
+.cancel-edit-btn {
+  background-color: #6c757d;
+  color: white;
+}
+
+.cancel-edit-btn:hover {
+  background-color: #5a6268;
+}
+
  

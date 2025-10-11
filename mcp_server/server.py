@@ -199,6 +199,9 @@ class MCPServer:
 
                 3. 搜索“用户偏好”的核心记忆，并限制返回 3 条结果:
                    `memory_search(query="用户偏好", memory_types=["core"], limit=3)`
+                   
+                4. 多关键词搜索示例 - 搜索同时包含"电脑"和"水果"的记忆:
+                   `memory_search(query="电脑 水果")`
             """
 
 
@@ -246,6 +249,9 @@ class MCPServer:
 
                 3. 搜索“用户偏好”的核心记忆，并限制返回 3 条结果:
                    `memory_search(query="用户偏好", memory_types=["core"], limit=3)`
+                   
+                4. 多关键词搜索示例 - 搜索同时包含"电脑"和"水果"的记忆:
+                   `memory_search(query="电脑 水果")`
             """
             try:
                 if not user_id:

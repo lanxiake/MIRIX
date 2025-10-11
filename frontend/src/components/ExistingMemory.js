@@ -42,6 +42,16 @@ const ExistingMemory = ({ settings }) => {
   const [saveErrors, setSaveErrors] = useState({});
   const [saveSuccesses, setSaveSuccesses] = useState({});
 
+  // State for memory management (delete and edit)
+  const [selectedMemories, setSelectedMemories] = useState(new Set());
+  const [editingMemory, setEditingMemory] = useState(null);
+  const [editingMemoryData, setEditingMemoryData] = useState({});
+  
+  // State for memory deletion confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [memoriesToDelete, setMemoriesToDelete] = useState({ type: '', ids: [] });
+  const [deletingMemories, setDeletingMemories] = useState(new Set());
+
   // Helper function to get view mode for current tab
   const getCurrentViewMode = () => viewModes[activeSubTab] || 'list';
   
@@ -244,6 +254,119 @@ const ExistingMemory = ({ settings }) => {
     }
   }, [settings.lastBackendRefresh, settings.serverUrl, activeSubTab]);
 
+  // Memory management functions
+  const handleDeleteMemory = async (memoryType, memoryId) => {
+    /**
+     * 删除单个记忆
+     */
+    try {
+      setDeletingMemories(prev => new Set([...prev, memoryId]));
+      
+      const response = await queuedFetch(`${settings.serverUrl}/memory/${memoryType}/${memoryId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // 刷新记忆数据
+          fetchMemoryData(activeSubTab);
+          // 显示成功消息
+          console.log('记忆删除成功:', result.message);
+        } else {
+          console.error('删除记忆失败:', result.message);
+        }
+      } else {
+        console.error('删除记忆请求失败:', response.statusText);
+      }
+    } catch (error) {
+      console.error('删除记忆时发生错误:', error);
+    } finally {
+      setDeletingMemories(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(memoryId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleEditMemory = async (memoryType, memoryId, updates) => {
+    /**
+     * 更新记忆内容
+     */
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/memory/${memoryType}/${memoryId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          memory_type: memoryType,
+          memory_id: memoryId,
+          updates: updates
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // 刷新记忆数据
+          fetchMemoryData(activeSubTab);
+                   // 清空编辑状态
+         setEditingMemory(null);
+         setEditingMemoryData({});
+          // 显示成功消息
+          console.log('记忆更新成功:', result.message);
+        } else {
+          console.error('更新记忆失败:', result.message);
+        }
+      } else {
+        console.error('更新记忆请求失败:', response.statusText);
+      }
+    } catch (error) {
+      console.error('更新记忆时发生错误:', error);
+    }
+  };
+
+     const startEditMemory = (memoryId, currentData) => {
+     /**
+      * 开始编辑记忆
+      */
+     setEditingMemory(memoryId);
+     setEditingMemoryData(currentData);
+   };
+
+   const cancelEditMemory = () => {
+     /**
+      * 取消编辑记忆
+      */
+     setEditingMemory(null);
+     setEditingMemoryData({});
+   };
+
+  const confirmDeleteMemory = (memoryType, memoryId) => {
+    /**
+     * 显示删除确认对话框
+     */
+    setMemoriesToDelete({ type: memoryType, ids: [memoryId] });
+    setShowDeleteConfirm(true);
+  };
+
+  const executeDelete = () => {
+    /**
+     * 执行删除操作
+     */
+    const { type, ids } = memoriesToDelete;
+    if (ids.length === 1) {
+      handleDeleteMemory(type, ids[0]);
+    }
+    setShowDeleteConfirm(false);
+    setMemoriesToDelete({ type: '', ids: [] });
+  };
+
   const renderMemoryContent = () => {
     const currentViewMode = getCurrentViewMode();
     
@@ -355,12 +478,60 @@ const ExistingMemory = ({ settings }) => {
       case 'past-events':
         const episodicItemId = `episodic-${index}`;
         const isEpisodicExpanded = expandedItems.has(episodicItemId);
+        const isEditingEpisodic = editingMemory === item.id;
+        
         return (
           <div className="episodic-memory">
-            <div className="memory-timestamp">
-              {item.timestamp ? new Date(item.timestamp).toLocaleString() : t('memory.details.unknownTime')}
+            <div className="memory-header">
+              <div className="memory-timestamp">
+                {item.timestamp ? new Date(item.timestamp).toLocaleString() : t('memory.details.unknownTime')}
+              </div>
+              <div className="memory-actions">
+                <button 
+                  className="edit-memory-btn"
+                  onClick={() => startEditMemory(item.id, item)}
+                  title="编辑记忆"
+                >
+                  ✏️
+                </button>
+                <button 
+                  className="delete-memory-btn"
+                  onClick={() => confirmDeleteMemory('episodic', item.id)}
+                  disabled={deletingMemories.has(item.id)}
+                  title="删除记忆"
+                >
+                  {deletingMemories.has(item.id) ? '⏳' : '🗑️'}
+                </button>
+              </div>
             </div>
-            <div className="memory-content">{highlightText(item.summary, searchQuery)}</div>
+            
+            {isEditingEpisodic ? (
+              <div className="memory-edit-form">
+                <textarea
+                  value={editingMemoryData.summary || ''}
+                  onChange={(e) => setEditingMemoryData({...editingMemoryData, summary: e.target.value})}
+                  className="edit-summary-input"
+                  placeholder="编辑摘要..."
+                />
+                <div className="edit-actions">
+                  <button 
+                    className="save-edit-btn"
+                    onClick={() => handleEditMemory('episodic', item.id, {summary: editingMemoryData.summary})}
+                  >
+                    保存
+                  </button>
+                  <button 
+                    className="cancel-edit-btn"
+                    onClick={cancelEditMemory}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="memory-content">{highlightText(item.summary, searchQuery)}</div>
+            )}
+            
             {item.details && (
               <div className="memory-details-section">
                 <button 
@@ -381,89 +552,312 @@ const ExistingMemory = ({ settings }) => {
       case 'semantic':
         const itemId = `semantic-${index}`;
         const isExpanded = expandedItems.has(itemId);
+        const isEditingSemantic = editingMemory === item.id;
+        
         return (
           <div className="semantic-memory">
-            <div className="memory-title">{highlightText(item.title || item.name, searchQuery)}</div>
-            {item.summary && <div className="memory-summary">{highlightText(item.summary, searchQuery)}</div>}
-            {item.details && (
-              <div className="memory-details-section">
+            <div className="memory-header">
+              <div className="memory-title">{highlightText(item.title || item.name, searchQuery)}</div>
+              <div className="memory-actions">
                 <button 
-                  className="expand-toggle-button"
-                  onClick={() => toggleExpanded(itemId)}
-                  title={isExpanded ? t('memory.actions.expandDetails') : t('memory.actions.collapseDetails')}
+                  className="edit-memory-btn"
+                  onClick={() => startEditMemory(item.id, item)}
+                  title="编辑记忆"
                 >
-                  {isExpanded ? `▼ ${t('memory.actions.hideDetails')}` : `▶ ${t('memory.actions.showDetails')}`}
+                  ✏️
                 </button>
-                {isExpanded && (
-                  <div className="memory-details">{highlightText(item.details, searchQuery)}</div>
+                <button 
+                  className="delete-memory-btn"
+                  onClick={() => confirmDeleteMemory('semantic', item.id)}
+                  disabled={deletingMemories.has(item.id)}
+                  title="删除记忆"
+                >
+                  {deletingMemories.has(item.id) ? '⏳' : '🗑️'}
+                </button>
+              </div>
+            </div>
+            
+            {isEditingSemantic ? (
+              <div className="memory-edit-form">
+                <div className="edit-field">
+                  <label>标题:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.title || editingMemoryData.name || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, title: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>摘要:</label>
+                  <textarea
+                    value={editingMemoryData.summary || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, summary: e.target.value})}
+                    className="edit-summary-input"
+                    rows="3"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>详细内容:</label>
+                  <textarea
+                    value={editingMemoryData.details || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, details: e.target.value})}
+                    className="edit-details-input"
+                    rows="5"
+                  />
+                </div>
+                <div className="edit-actions">
+                  <button 
+                    className="save-edit-btn"
+                    onClick={() => handleEditMemory('semantic', item.id, {
+                      title: editingMemoryData.title || editingMemoryData.name,
+                      summary: editingMemoryData.summary,
+                      details: editingMemoryData.details
+                    })}
+                  >
+                    保存
+                  </button>
+                  <button 
+                    className="cancel-edit-btn"
+                    onClick={cancelEditMemory}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {item.summary && <div className="memory-summary">{highlightText(item.summary, searchQuery)}</div>}
+                {item.details && (
+                  <div className="memory-details-section">
+                    <button 
+                      className="expand-toggle-button"
+                      onClick={() => toggleExpanded(itemId)}
+                      title={isExpanded ? t('memory.actions.expandDetails') : t('memory.actions.collapseDetails')}
+                    >
+                      {isExpanded ? `▼ ${t('memory.actions.hideDetails')}` : `▶ ${t('memory.actions.showDetails')}`}
+                    </button>
+                    {isExpanded && (
+                      <div className="memory-details">{highlightText(item.details, searchQuery)}</div>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-            {item.last_updated && <div className="memory-updated">{t('memory.details.updated', { date: new Date(item.last_updated).toLocaleString() })}</div>}
-            {item.tags && (
-              <div className="memory-tags">
-                {item.tags.map((tag, i) => (
-                  <span key={i} className="memory-tag">{highlightText(tag, searchQuery)}</span>
-                ))}
-              </div>
+                {item.last_updated && <div className="memory-updated">{t('memory.details.updated', { date: new Date(item.last_updated).toLocaleString() })}</div>}
+                {item.tags && (
+                  <div className="memory-tags">
+                    {item.tags.map((tag, i) => (
+                      <span key={i} className="memory-tag">{highlightText(tag, searchQuery)}</span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
 
       case 'procedural':
+        const isEditingProcedural = editingMemory === item.id;
+        
         return (
           <div className="procedural-memory">
-            <div className="memory-title">{highlightText(item.summary, searchQuery)}</div>
-            <div className="memory-content">
-              {item.steps && item.steps.length > 0 ? (
-                <div className="memory-steps">
-                  <strong>🎯 {t('memory.details.stepByStepGuide')}</strong>
-                  <ol>
-                    {item.steps.map((step, i) => (
-                      <li key={i}>{highlightText(step, searchQuery)}</li>
-                    ))}
-                  </ol>
-                </div>
-              ) : (
-                <div>{highlightText(item.content || item.description || t('memory.details.noStepsAvailable'), searchQuery)}</div>
-              )}
+            <div className="memory-header">
+              <div className="memory-title">{highlightText(item.summary, searchQuery)}</div>
+              <div className="memory-actions">
+                <button 
+                  className="edit-memory-btn"
+                  onClick={() => startEditMemory(item.id, item)}
+                  title="编辑记忆"
+                >
+                  ✏️
+                </button>
+                <button 
+                  className="delete-memory-btn"
+                  onClick={() => confirmDeleteMemory('procedural', item.id)}
+                  disabled={deletingMemories.has(item.id)}
+                  title="删除记忆"
+                >
+                  {deletingMemories.has(item.id) ? '⏳' : '🗑️'}
+                </button>
+              </div>
             </div>
-            {item.proficiency && <div className="memory-proficiency">{t('memory.details.proficiency', { value: highlightText(item.proficiency, searchQuery) })}</div>}
-            {item.difficulty && <div className="memory-difficulty">{t('memory.details.difficulty', { value: highlightText(item.difficulty, searchQuery) })}</div>}
-            {item.success_rate && <div className="memory-success-rate">{t('memory.details.successRate', { value: highlightText(item.success_rate, searchQuery) })}</div>}
-            {item.time_to_complete && <div className="memory-time">{t('memory.details.timeToComplete', { value: highlightText(item.time_to_complete, searchQuery) })}</div>}
-            {item.last_practiced && <div className="memory-practiced">{t('memory.details.lastPracticed', { date: new Date(item.last_practiced).toLocaleString() })}</div>}
-            {item.prerequisites && item.prerequisites.length > 0 && (
-              <div className="memory-prerequisites">
-                {t('memory.details.prerequisites', { list: item.prerequisites.map(prereq => highlightText(prereq, searchQuery)).join(', ') })}
+            
+            {isEditingProcedural ? (
+              <div className="memory-edit-form">
+                <div className="edit-field">
+                  <label>摘要:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.summary || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, summary: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>内容/描述:</label>
+                  <textarea
+                    value={editingMemoryData.content || editingMemoryData.description || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, content: e.target.value})}
+                    className="edit-summary-input"
+                    rows="4"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>步骤 (每行一个步骤):</label>
+                  <textarea
+                    value={editingMemoryData.steps ? editingMemoryData.steps.join('\n') : ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, steps: e.target.value.split('\n').filter(step => step.trim())})}
+                    className="edit-details-input"
+                    rows="6"
+                    placeholder="第一步&#10;第二步&#10;第三步..."
+                  />
+                </div>
+                <div className="edit-actions">
+                  <button 
+                    className="save-edit-btn"
+                    onClick={() => handleEditMemory('procedural', item.id, {
+                      summary: editingMemoryData.summary,
+                      content: editingMemoryData.content || editingMemoryData.description,
+                      steps: editingMemoryData.steps
+                    })}
+                  >
+                    保存
+                  </button>
+                  <button 
+                    className="cancel-edit-btn"
+                    onClick={cancelEditMemory}
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
-            )}
-            {item.last_updated && <div className="memory-updated">{t('memory.details.updated', { date: new Date(item.last_updated).toLocaleString() })}</div>}
-            {item.tags && (
-              <div className="memory-tags">
-                {item.tags.map((tag, i) => (
-                  <span key={i} className="memory-tag">{highlightText(tag, searchQuery)}</span>
-                ))}
-              </div>
+            ) : (
+              <>
+                <div className="memory-content">
+                  {item.steps && item.steps.length > 0 ? (
+                    <div className="memory-steps">
+                      <strong>🎯 {t('memory.details.stepByStepGuide')}</strong>
+                      <ol>
+                        {item.steps.map((step, i) => (
+                          <li key={i}>{highlightText(step, searchQuery)}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : (
+                    <div>{highlightText(item.content || item.description || t('memory.details.noStepsAvailable'), searchQuery)}</div>
+                  )}
+                </div>
+                {item.proficiency && <div className="memory-proficiency">{t('memory.details.proficiency', { value: highlightText(item.proficiency, searchQuery) })}</div>}
+                {item.difficulty && <div className="memory-difficulty">{t('memory.details.difficulty', { value: highlightText(item.difficulty, searchQuery) })}</div>}
+                {item.success_rate && <div className="memory-success-rate">{t('memory.details.successRate', { value: highlightText(item.success_rate, searchQuery) })}</div>}
+                {item.time_to_complete && <div className="memory-time">{t('memory.details.timeToComplete', { value: highlightText(item.time_to_complete, searchQuery) })}</div>}
+                {item.last_practiced && <div className="memory-practiced">{t('memory.details.lastPracticed', { date: new Date(item.last_practiced).toLocaleString() })}</div>}
+                {item.prerequisites && item.prerequisites.length > 0 && (
+                  <div className="memory-prerequisites">
+                    {t('memory.details.prerequisites', { list: item.prerequisites.map(prereq => highlightText(prereq, searchQuery)).join(', ') })}
+                  </div>
+                )}
+                {item.last_updated && <div className="memory-updated">{t('memory.details.updated', { date: new Date(item.last_updated).toLocaleString() })}</div>}
+                {item.tags && (
+                  <div className="memory-tags">
+                    {item.tags.map((tag, i) => (
+                      <span key={i} className="memory-tag">{highlightText(tag, searchQuery)}</span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
 
       case 'docs-files':
+        const isEditingResource = editingMemory === item.id;
+        
         return (
           <div className="resource-memory">
-            <div className="memory-filename">{highlightText(item.filename || item.name, searchQuery)}</div>
-            <div className="memory-file-type">{highlightText(item.type || t('memory.details.unknownType'), searchQuery)}</div>
-            <div className="memory-summary">{highlightText(item.summary || item.content, searchQuery)}</div>
-            {item.last_accessed && (
-              <div className="memory-accessed">{t('memory.details.lastAccessed', { date: new Date(item.last_accessed).toLocaleString() })}</div>
+            <div className="memory-header">
+              <div className="memory-filename">{highlightText(item.filename || item.name, searchQuery)}</div>
+              <div className="memory-actions">
+                <button 
+                  className="edit-memory-btn"
+                  onClick={() => startEditMemory(item.id, item)}
+                  title="编辑记忆"
+                >
+                  ✏️
+                </button>
+                <button 
+                  className="delete-memory-btn"
+                  onClick={() => confirmDeleteMemory('resource', item.id)}
+                  disabled={deletingMemories.has(item.id)}
+                  title="删除记忆"
+                >
+                  {deletingMemories.has(item.id) ? '⏳' : '🗑️'}
+                </button>
+              </div>
+            </div>
+            
+            {isEditingResource ? (
+              <div className="memory-edit-form">
+                <div className="edit-field">
+                  <label>文件名:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.filename || editingMemoryData.name || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, filename: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>文件类型:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.type || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, type: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>摘要/内容:</label>
+                  <textarea
+                    value={editingMemoryData.summary || editingMemoryData.content || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, summary: e.target.value})}
+                    className="edit-summary-input"
+                    rows="5"
+                  />
+                </div>
+                <div className="edit-actions">
+                  <button 
+                    className="save-edit-btn"
+                    onClick={() => handleEditMemory('resource', item.id, {
+                      filename: editingMemoryData.filename || editingMemoryData.name,
+                      type: editingMemoryData.type,
+                      summary: editingMemoryData.summary || editingMemoryData.content
+                    })}
+                  >
+                    保存
+                  </button>
+                  <button 
+                    className="cancel-edit-btn"
+                    onClick={cancelEditMemory}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="memory-file-type">{highlightText(item.type || t('memory.details.unknownType'), searchQuery)}</div>
+                <div className="memory-summary">{highlightText(item.summary || item.content, searchQuery)}</div>
+                {item.last_accessed && (
+                  <div className="memory-accessed">{t('memory.details.lastAccessed', { date: new Date(item.last_accessed).toLocaleString() })}</div>
+                )}
+                {item.size && <div className="memory-size">{t('memory.details.size', { size: item.size })}</div>}
+              </>
             )}
-            {item.size && <div className="memory-size">{t('memory.details.size', { size: item.size })}</div>}
           </div>
         );
 
       case 'core-understanding':
-        const isEditing = isCoreMemoryEditing(index);
+        const isCoreEditing = isCoreMemoryEditing(index);
         const currentContent = getCoreMemoryContent(item, index);
         const isSaving = savingBlocks.has(index);
         const saveError = saveErrors[index];
@@ -477,9 +871,9 @@ const ExistingMemory = ({ settings }) => {
                 {item.total_characters && item.max_characters && (
                   <span className="character-count-inline"> ({t('memory.details.characterCount', { current: currentContent.length, max: item.max_characters })})</span>
                 )}
-                {isEditing && <span className="edited-indicator"> • {t('memory.details.editing')}</span>}
+                {isCoreEditing && <span className="edited-indicator"> • {t('memory.details.editing')}</span>}
               </div>
-              {!isEditing && (
+              {!isCoreEditing && (
                 <button
                   onClick={() => startEditingCoreMemory(index)}
                   className="edit-memory-button"
@@ -489,7 +883,7 @@ const ExistingMemory = ({ settings }) => {
               )}
             </div>
             
-            {isEditing ? (
+            {isCoreEditing ? (
               <div className="memory-understanding-editable">
                 <textarea
                   value={currentContent}
@@ -542,22 +936,107 @@ const ExistingMemory = ({ settings }) => {
         );
 
       case 'credentials':
+        const isEditingCredentials = editingMemory === item.id;
+        
         return (
           <div className="credential-memory">
-            <div className="memory-credential-name">{highlightText(item.caption, searchQuery)}</div>
-            <div className="memory-credential-type">{highlightText(item.entry_type || t('memory.details.credentialType'), searchQuery)}</div>
-            <div className="memory-credential-content">
-              {item.content || t('memory.details.credentialMasked')}
-            </div>
-            {item.source && (
-              <div className="memory-credential-source">{t('memory.details.source', { source: highlightText(item.source, searchQuery) })}</div>
-            )}
-            {item.sensitivity && (
-              <div className="memory-credential-sensitivity">
-                <span className={`sensitivity-badge sensitivity-${item.sensitivity}`}>
-                  {t('memory.details.sensitivity', { level: item.sensitivity.charAt(0).toUpperCase() + item.sensitivity.slice(1) })}
-                </span>
+            <div className="memory-header">
+              <div className="memory-credential-name">{highlightText(item.caption, searchQuery)}</div>
+              <div className="memory-actions">
+                <button 
+                  className="edit-memory-btn"
+                  onClick={() => startEditMemory(item.id, item)}
+                  title="编辑记忆"
+                >
+                  ✏️
+                </button>
+                <button 
+                  className="delete-memory-btn"
+                  onClick={() => confirmDeleteMemory('credentials', item.id)}
+                  disabled={deletingMemories.has(item.id)}
+                  title="删除记忆"
+                >
+                  {deletingMemories.has(item.id) ? '⏳' : '🗑️'}
+                </button>
               </div>
+            </div>
+            
+            {isEditingCredentials ? (
+              <div className="memory-edit-form">
+                <div className="edit-field">
+                  <label>标题:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.caption || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, caption: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>类型:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.entry_type || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, entry_type: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>内容:</label>
+                  <textarea
+                    value={editingMemoryData.content || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, content: e.target.value})}
+                    className="edit-summary-input"
+                    rows="3"
+                    placeholder="注意：这是敏感信息"
+                  />
+                </div>
+                <div className="edit-field">
+                  <label>来源:</label>
+                  <input
+                    type="text"
+                    value={editingMemoryData.source || ''}
+                    onChange={(e) => setEditingMemoryData({...editingMemoryData, source: e.target.value})}
+                    className="edit-title-input"
+                  />
+                </div>
+                <div className="edit-actions">
+                  <button 
+                    className="save-edit-btn"
+                    onClick={() => handleEditMemory('credentials', item.id, {
+                      caption: editingMemoryData.caption,
+                      entry_type: editingMemoryData.entry_type,
+                      content: editingMemoryData.content,
+                      source: editingMemoryData.source
+                    })}
+                  >
+                    保存
+                  </button>
+                  <button 
+                    className="cancel-edit-btn"
+                    onClick={cancelEditMemory}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="memory-credential-type">{highlightText(item.entry_type || t('memory.details.credentialType'), searchQuery)}</div>
+                <div className="memory-credential-content">
+                  {item.content || t('memory.details.credentialMasked')}
+                </div>
+                {item.source && (
+                  <div className="memory-credential-source">{t('memory.details.source', { source: highlightText(item.source, searchQuery) })}</div>
+                )}
+                {item.sensitivity && (
+                  <div className="memory-credential-sensitivity">
+                    <span className={`sensitivity-badge sensitivity-${item.sensitivity}`}>
+                      {t('memory.details.sensitivity', { level: item.sensitivity.charAt(0).toUpperCase() + item.sensitivity.slice(1) })}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
@@ -891,6 +1370,32 @@ const ExistingMemory = ({ settings }) => {
         onClose={() => setShowUploadExportModal(false)}
         settings={settings}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>确认删除</h3>
+            <p>
+              您确定要删除这{memoriesToDelete.ids.length > 1 ? '些' : '个'}记忆吗？此操作无法撤销。
+            </p>
+            <div className="modal-actions">
+              <button 
+                className="cancel-button"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                取消
+              </button>
+              <button 
+                className="delete-button"
+                onClick={executeDelete}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
