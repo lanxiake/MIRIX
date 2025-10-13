@@ -643,6 +643,231 @@ class MIRIXAdapter:
                 "total_count": 0
             }
     
+    async def search_memories_by_vector(
+        self, 
+        query: str, 
+        memory_types: List[str], 
+        limit: int = 10,
+        user_id: Optional[str] = None,
+        similarity_threshold: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        使用多种搜索策略搜索记忆，优先使用BM25，fallback到向量搜索
+        
+        Args:
+            query: 搜索查询字符串
+            memory_types: 要搜索的记忆类型列表
+            limit: 每种类型的结果数量限制
+            user_id: 用户ID（可选）
+            similarity_threshold: 相似度阈值（0-1，越高越严格）
+            
+        Returns:
+            Dict[str, Any]: 搜索结果
+        """
+        try:
+            logger.info(f"开始多策略搜索: query='{query}', types={memory_types}, limit={limit}, threshold={similarity_threshold}")
+            
+            all_memories = []
+            search_results = {}
+            
+            # 定义记忆类型到后端API路径的映射
+            type_api_paths = {
+                "episodic": "/memories/episodic/search",
+                "semantic": "/memories/semantic/search", 
+                "procedural": "/memories/procedural/search",
+                "resource": "/memories/resource/search",
+                "core": "/memories/core/search",
+                "credentials": "/memories/credentials/search"
+            }
+            
+            # 为每种记忆类型执行多策略搜索
+            for memory_type in memory_types:
+                if memory_type in type_api_paths:
+                    memories_found = []
+                    search_method_used = "none"
+                    error_msg = None
+                    
+                    # 策略1: 首先尝试BM25搜索（像memory_chat一样）
+                    try:
+                        logger.debug(f"尝试BM25搜索 {memory_type} 记忆...")
+                        
+                        bm25_request = {
+                            "query": query,
+                            "search_method": "bm25",  # 使用BM25搜索
+                            "search_field": self._get_default_search_field(memory_type),
+                            "limit": limit
+                        }
+                        
+                        # 只有当user_id不是默认值时才传递，让后端使用当前活跃用户
+                        if user_id and user_id != self.config.default_user_id:
+                            bm25_request["user_id"] = user_id
+                        
+                        logger.debug(f"发送BM25搜索请求到 {type_api_paths[memory_type]}: {bm25_request}")
+                        
+                        result = await self._make_request(
+                            "POST", 
+                            type_api_paths[memory_type], 
+                            data=bm25_request
+                        )
+                        
+                        if result and isinstance(result, list) and len(result) > 0:
+                            # BM25搜索成功
+                            for memory in result:
+                                memory["memory_type"] = memory_type
+                                # BM25搜索给予较高的默认分数
+                                if "similarity_score" not in memory:
+                                    memory["similarity_score"] = 0.8
+                                memories_found.append(memory)
+                            
+                            search_method_used = "bm25"
+                            logger.info(f"{memory_type} BM25搜索成功，找到 {len(memories_found)} 条记忆")
+                        
+                    except Exception as e:
+                        logger.warning(f"BM25搜索 {memory_type} 失败: {e}")
+                    
+                    # 策略2: 如果BM25没有结果，尝试向量搜索但降低阈值
+                    if not memories_found:
+                        try:
+                            logger.debug(f"BM25无结果，尝试向量搜索 {memory_type} 记忆...")
+                            
+                            # 降低向量搜索的阈值
+                            vector_threshold = max(0.3, similarity_threshold - 0.3)
+                            
+                            vector_request = {
+                                "query": query,
+                                "search_method": "embedding",  # 使用向量搜索
+                                "search_field": self._get_default_search_field(memory_type),
+                                "limit": limit,
+                                "similarity_threshold": vector_threshold
+                            }
+                            
+                            if user_id and user_id != self.config.default_user_id:
+                                vector_request["user_id"] = user_id
+                            
+                            logger.debug(f"发送向量搜索请求到 {type_api_paths[memory_type]}: {vector_request}")
+                            
+                            result = await self._make_request(
+                                "POST", 
+                                type_api_paths[memory_type], 
+                                data=vector_request
+                            )
+                            
+                            if result and isinstance(result, list):
+                                # 为每个记忆添加类型标识和相似度分数
+                                for memory in result:
+                                    memory["memory_type"] = memory_type
+                                    # 如果后端返回了相似度分数，保留它
+                                    if "similarity_score" not in memory:
+                                        memory["similarity_score"] = 0.5  # 向量搜索默认分数
+                                    
+                                    # 应用降低后的相似度阈值过滤
+                                    if memory["similarity_score"] >= vector_threshold:
+                                        memories_found.append(memory)
+                                
+                                if memories_found:
+                                    search_method_used = f"embedding(threshold={vector_threshold})"
+                                    logger.info(f"{memory_type} 向量搜索成功，找到 {len(result)} 条记忆，过滤后 {len(memories_found)} 条")
+                                else:
+                                    logger.info(f"{memory_type} 向量搜索找到 {len(result)} 条记忆，但都被阈值过滤")
+                            
+                        except Exception as e:
+                            logger.warning(f"向量搜索 {memory_type} 失败: {e}")
+                            error_msg = str(e)
+                    
+                    # 策略3: 如果向量搜索也失败，尝试简单的字符串匹配
+                    if not memories_found:
+                        try:
+                            logger.debug(f"向量搜索无结果，尝试字符串匹配搜索 {memory_type} 记忆...")
+                            
+                            string_request = {
+                                "query": query,
+                                "search_method": "string_match",  # 使用字符串匹配
+                                "search_field": self._get_default_search_field(memory_type),
+                                "limit": limit
+                            }
+                            
+                            if user_id and user_id != self.config.default_user_id:
+                                string_request["user_id"] = user_id
+                            
+                            logger.debug(f"发送字符串匹配请求到 {type_api_paths[memory_type]}: {string_request}")
+                            
+                            result = await self._make_request(
+                                "POST", 
+                                type_api_paths[memory_type], 
+                                data=string_request
+                            )
+                            
+                            if result and isinstance(result, list) and len(result) > 0:
+                                for memory in result:
+                                    memory["memory_type"] = memory_type
+                                    # 字符串匹配给予中等分数
+                                    if "similarity_score" not in memory:
+                                        memory["similarity_score"] = 0.6
+                                    memories_found.append(memory)
+                                
+                                search_method_used = "string_match"
+                                logger.info(f"{memory_type} 字符串匹配成功，找到 {len(memories_found)} 条记忆")
+                            
+                        except Exception as e:
+                            logger.warning(f"字符串匹配搜索 {memory_type} 失败: {e}")
+                            if not error_msg:
+                                error_msg = str(e)
+                    
+                    # 记录搜索结果
+                    if memories_found:
+                        search_results[memory_type] = {
+                            "memories": memories_found,
+                            "count": len(memories_found),
+                            "method": search_method_used,
+                            "success": True
+                        }
+                        all_memories.extend(memories_found)
+                    else:
+                        search_results[memory_type] = {
+                            "memories": [],
+                            "count": 0,
+                            "method": "all_failed",
+                            "error": error_msg or "所有搜索策略都未找到结果"
+                        }
+                        
+                else:
+                    logger.warning(f"不支持的记忆类型: {memory_type}")
+                    search_results[memory_type] = {
+                        "memories": [],
+                        "count": 0,
+                        "method": "unsupported",
+                        "error": f"不支持的记忆类型: {memory_type}"
+                    }
+            
+            # 按相似度分数排序所有记忆
+            all_memories.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
+            
+            logger.info(f"多策略搜索完成，总共找到 {len(all_memories)} 条记忆")
+            
+            return {
+                "success": True,
+                "query": query,
+                "memory_types": memory_types,
+                "search_method": "multi_strategy",
+                "similarity_threshold": similarity_threshold,
+                "results": search_results,
+                "all_memories": all_memories,
+                "total_count": len(all_memories)
+            }
+            
+        except Exception as e:
+            logger.error(f"多策略搜索失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "query": query,
+                "memory_types": memory_types,
+                "search_method": "multi_strategy",
+                "results": {},
+                "all_memories": [],
+                "total_count": 0
+            }
+    
     def _filter_memories_by_query(self, memories: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
         """
         根据查询字符串过滤记忆，支持多关键词搜索
@@ -793,3 +1018,23 @@ class MIRIXAdapter:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """异步上下文管理器出口"""
         await self.close()
+
+    def _get_default_search_field(self, memory_type: str) -> str:
+        """
+        获取每种记忆类型的默认搜索字段
+        
+        Args:
+            memory_type: 记忆类型
+            
+        Returns:
+            str: 默认搜索字段名
+        """
+        default_fields = {
+            "episodic": "details",      # 情景记忆搜索详情字段
+            "semantic": "details",      # 语义记忆搜索详情字段  
+            "procedural": "summary",    # 程序记忆搜索描述字段
+            "resource": "summary",      # 资源记忆搜索摘要字段（使用summary_embedding）
+            "core": "value",           # 核心记忆搜索值字段
+            "credentials": "caption"    # 凭证记忆搜索标题字段
+        }
+        return default_fields.get(memory_type, "summary")

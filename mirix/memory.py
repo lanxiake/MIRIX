@@ -65,8 +65,38 @@ def summarize_messages(
     agent_state: AgentState,
     message_sequence_to_summarize: List[Message],
     existing_file_uris: Optional[List[str]] = None,
+    recursion_depth: int = 0,
+    max_recursion_depth: int = 5,
 ):
-    """Summarize a message sequence using GPT"""
+    """Summarize a message sequence using GPT
+    
+    Args:
+        agent_state: Agent state containing LLM configuration
+        message_sequence_to_summarize: List of messages to summarize
+        existing_file_uris: Optional list of existing file URIs
+        recursion_depth: Current recursion depth (for preventing infinite recursion)
+        max_recursion_depth: Maximum allowed recursion depth
+    
+    Returns:
+        str: Summarized content
+    """
+    # Check recursion depth to prevent stack overflow
+    if recursion_depth >= max_recursion_depth:
+        logger.warning(f"Max recursion depth ({max_recursion_depth}) reached, truncating messages")
+        # Return a simple truncated summary instead of recursing further
+        if len(message_sequence_to_summarize) > 10:
+            # Keep first 5 and last 5 messages
+            truncated_messages = message_sequence_to_summarize[:5] + message_sequence_to_summarize[-5:]
+            summary_input = _format_summary_history(truncated_messages)
+        else:
+            summary_input = _format_summary_history(message_sequence_to_summarize)
+        
+        # If still too long, just take first part
+        if count_tokens(summary_input) > 4000:  # Conservative limit
+            summary_input = summary_input[:4000] + "...[truncated]"
+        
+        return f"[Summary truncated due to recursion limit] {summary_input}"
+    
     # we need the context_window
     context_window = agent_state.llm_config.context_window
 
@@ -103,6 +133,8 @@ def summarize_messages(
                 agent_state,
                 message_sequence_to_summarize=batch,
                 existing_file_uris=existing_file_uris,
+                recursion_depth=recursion_depth + 1,
+                max_recursion_depth=max_recursion_depth,
             )
             summaries.append(batch_summary)
 
@@ -115,6 +147,15 @@ def summarize_messages(
             combined_tokens = count_tokens(combined)
             if combined_tokens > max_summary_tokens:
                 logger.info(f"Combined summaries still too long ({combined_tokens} tokens), re-summarizing")
+                # Check if we can recurse further
+                if recursion_depth + 1 >= max_recursion_depth:
+                    logger.warning(f"Cannot recurse further (depth {recursion_depth + 1}), truncating combined summary")
+                    # Truncate the combined summary instead of recursing
+                    max_chars = int(max_summary_tokens * 4)  # Rough estimate: 1 token ≈ 4 chars
+                    if len(combined) > max_chars:
+                        combined = combined[:max_chars] + "...[truncated]"
+                    return combined
+                
                 # Create a simple message to summarize the summaries
                 summary_messages = [
                     Message(
@@ -127,6 +168,8 @@ def summarize_messages(
                     agent_state,
                     message_sequence_to_summarize=summary_messages,
                     existing_file_uris=existing_file_uris,
+                    recursion_depth=recursion_depth + 1,
+                    max_recursion_depth=max_recursion_depth,
                 )
             return combined
 

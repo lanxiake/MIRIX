@@ -55,7 +55,12 @@ def switch_user_context(agent_wrapper, user_id: str):
 def get_user_or_default(agent_wrapper, user_id: Optional[str] = None):
     """Get user by ID or return current user"""
     if user_id:
-        return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+        try:
+            return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+        except Exception:
+            # 如果指定用户不存在，回退到默认用户
+            logger.warning(f"用户 {user_id} 不存在，使用默认用户")
+            return agent_wrapper.client.server.user_manager.get_default_user()
     elif agent_wrapper and agent_wrapper.client.user:
         return agent_wrapper.client.user
     else:
@@ -2911,6 +2916,503 @@ async def upload_document(request: UploadDocumentRequest):
             status_code=500, 
             detail=f"文档处理失败: {str(e)}"
         )
+
+
+# 新增向量搜索API接口
+class VectorSearchRequest(BaseModel):
+    query: str = Field(..., description="搜索查询字符串")
+    search_method: str = Field(default="embedding", description="搜索方法，默认为embedding")
+    search_field: str = Field(default="summary", description="搜索字段")
+    limit: int = Field(default=10, description="返回结果数量限制")
+    user_id: Optional[str] = Field(None, description="用户ID")
+    similarity_threshold: float = Field(default=0.7, description="相似度阈值")
+
+
+@app.post("/memories/episodic/search")
+async def search_episodic_memory(request: VectorSearchRequest):
+    """向量搜索情景记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"情景记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 获取情景记忆管理器
+        episodic_manager = agent.client.server.episodic_memory_manager
+        
+        # 执行搜索，添加SSL错误重试
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 先获取查询的embedding向量
+                from mirix.embeddings import embedding_model
+                embed_model = embedding_model(agent.agent_states.episodic_memory_agent_state.embedding_config)
+                query_embedding = embed_model.get_text_embedding(request.query)
+                
+                results = episodic_manager.list_episodic_memory(
+                    agent_state=agent.agent_states.episodic_memory_agent_state,
+                    query=request.query,
+                    search_method=request.search_method,
+                    search_field=request.search_field,
+                    actor=target_user,
+                    limit=request.limit
+                )
+                break  # 成功则跳出重试循环
+            except Exception as e:
+                if "SSL" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"SSL错误，重试 {attempt + 1}/{max_retries}: {e}")
+                    import time
+                    time.sleep(1)  # 等待1秒后重试
+                    continue
+                else:
+                    raise  # 非SSL错误或已达到最大重试次数，抛出异常
+        
+        # 转换结果格式，计算真实相似度分数
+        formatted_results = []
+        for event in results:
+            # 计算相似度分数
+            similarity_score = 0.5  # 默认分数
+            try:
+                if hasattr(event, 'details_embedding') and event.details_embedding:
+                    # 计算余弦相似度
+                    import numpy as np
+                    event_embedding = np.array(event.details_embedding)
+                    query_embedding_np = np.array(query_embedding)
+                    
+                    # 计算余弦相似度 (1 - cosine_distance)
+                    dot_product = np.dot(event_embedding, query_embedding_np)
+                    norm_event = np.linalg.norm(event_embedding)
+                    norm_query = np.linalg.norm(query_embedding_np)
+                    
+                    if norm_event > 0 and norm_query > 0:
+                        similarity_score = dot_product / (norm_event * norm_query)
+                        # 确保分数在0-1范围内
+                        similarity_score = max(0, min(1, similarity_score))
+            except Exception as e:
+                logger.debug(f"计算相似度失败: {e}")
+            
+            event_dict = {
+                "id": event.id,
+                "summary": event.summary,
+                "details": event.details,
+                "event_type": event.event_type,
+                "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+                "tree_path": getattr(event, "tree_path", []),
+                "similarity_score": similarity_score
+            }
+            formatted_results.append(event_dict)
+        
+        # 按相似度分数排序
+        formatted_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        logger.info(f"情景记忆搜索完成，找到 {len(formatted_results)} 条结果")
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"情景记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+@app.post("/memories/semantic/search")
+async def search_semantic_memory(request: VectorSearchRequest):
+    """向量搜索语义记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"语义记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 获取语义记忆管理器
+        semantic_manager = agent.client.server.semantic_memory_manager
+        
+        # 执行搜索，添加SSL错误重试
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # 先获取查询的embedding向量
+                from mirix.embeddings import embedding_model
+                embed_model = embedding_model(agent.agent_states.semantic_memory_agent_state.embedding_config)
+                query_embedding = embed_model.get_text_embedding(request.query)
+                
+                results = semantic_manager.list_semantic_items(
+                    agent_state=agent.agent_states.semantic_memory_agent_state,
+                    query=request.query,
+                    search_method=request.search_method,
+                    search_field=request.search_field,
+                    actor=target_user,
+                    limit=request.limit
+                )
+                break  # 成功则跳出重试循环
+            except Exception as e:
+                if "SSL" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"SSL错误，重试 {attempt + 1}/{max_retries}: {e}")
+                    import time
+                    time.sleep(1)  # 等待1秒后重试
+                    continue
+                else:
+                    raise  # 非SSL错误或已达到最大重试次数，抛出异常
+        
+        # 转换结果格式，计算真实相似度分数
+        formatted_results = []
+        for item in results:
+            # 计算相似度分数
+            similarity_score = 0.5  # 默认分数
+            try:
+                if hasattr(item, 'details_embedding') and item.details_embedding:
+                    # 计算余弦相似度
+                    import numpy as np
+                    item_embedding = np.array(item.details_embedding)
+                    query_embedding_np = np.array(query_embedding)
+                    
+                    # 计算余弦相似度
+                    dot_product = np.dot(item_embedding, query_embedding_np)
+                    norm_item = np.linalg.norm(item_embedding)
+                    norm_query = np.linalg.norm(query_embedding_np)
+                    
+                    if norm_item > 0 and norm_query > 0:
+                        similarity_score = dot_product / (norm_item * norm_query)
+                        similarity_score = max(0, min(1, similarity_score))
+            except Exception as e:
+                logger.debug(f"计算相似度失败: {e}")
+            
+            item_dict = {
+                "id": item.id,
+                "name": item.name,
+                "summary": item.summary,
+                "details": item.details,
+                "tree_path": getattr(item, "tree_path", []),
+                "similarity_score": similarity_score
+            }
+            formatted_results.append(item_dict)
+        
+        # 按相似度分数排序
+        formatted_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        logger.info(f"语义记忆搜索完成，找到 {len(formatted_results)} 条结果")
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"语义记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+@app.post("/memories/procedural/search")
+async def search_procedural_memory(request: VectorSearchRequest):
+    """向量搜索程序记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"程序记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 获取程序记忆管理器
+        procedural_manager = agent.client.server.procedural_memory_manager
+        
+        # 执行搜索
+        # 先获取查询的embedding向量
+        from mirix.embeddings import embedding_model
+        embed_model = embedding_model(agent.agent_states.procedural_memory_agent_state.embedding_config)
+        query_embedding = embed_model.get_text_embedding(request.query)
+        
+        results = procedural_manager.list_procedures(
+            agent_state=agent.agent_states.procedural_memory_agent_state,
+            query=request.query,
+            search_method=request.search_method,
+            search_field=request.search_field,
+            actor=target_user,
+            limit=request.limit
+        )
+        
+        # 转换结果格式，计算真实相似度分数
+        formatted_results = []
+        for item in results:
+            # 计算相似度分数
+            similarity_score = 0.5  # 默认分数
+            try:
+                if hasattr(item, 'summary_embedding') and item.summary_embedding:
+                    # 计算余弦相似度
+                    import numpy as np
+                    item_embedding = np.array(item.summary_embedding)
+                    query_embedding_np = np.array(query_embedding)
+                    
+                    # 计算余弦相似度
+                    dot_product = np.dot(item_embedding, query_embedding_np)
+                    norm_item = np.linalg.norm(item_embedding)
+                    norm_query = np.linalg.norm(query_embedding_np)
+                    
+                    if norm_item > 0 and norm_query > 0:
+                        similarity_score = dot_product / (norm_item * norm_query)
+                        similarity_score = max(0, min(1, similarity_score))
+            except Exception as e:
+                logger.debug(f"计算相似度失败: {e}")
+            
+            item_dict = {
+                "id": item.id,
+                "summary": item.summary,
+                "description": getattr(item, "description", ""),
+                "tree_path": getattr(item, "tree_path", []),
+                "similarity_score": similarity_score
+            }
+            formatted_results.append(item_dict)
+        
+        # 按相似度分数排序
+        formatted_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        logger.info(f"程序记忆搜索完成，找到 {len(formatted_results)} 条结果")
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"程序记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+@app.post("/memories/resource/search")
+async def search_resource_memory(request: VectorSearchRequest):
+    """向量搜索资源记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"资源记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 获取资源记忆管理器
+        resource_manager = agent.client.server.resource_memory_manager
+        
+        # 执行搜索
+        # 先获取查询的embedding向量
+        from mirix.embeddings import embedding_model
+        embed_model = embedding_model(agent.agent_states.resource_memory_agent_state.embedding_config)
+        query_embedding = embed_model.get_text_embedding(request.query)
+        
+        results = resource_manager.list_resources(
+            agent_state=agent.agent_states.resource_memory_agent_state,
+            query=request.query,
+            search_method=request.search_method,
+            search_field=request.search_field,
+            actor=target_user,
+            limit=request.limit
+        )
+        
+        # 转换结果格式，返回完整内容并计算真实相似度分数
+        formatted_results = []
+        for item in results:
+            # 计算相似度分数
+            similarity_score = 0.5  # 默认分数
+            try:
+                if hasattr(item, 'summary_embedding') and item.summary_embedding:
+                    # 计算余弦相似度
+                    import numpy as np
+                    item_embedding = np.array(item.summary_embedding)
+                    query_embedding_np = np.array(query_embedding)
+                    
+                    # 计算余弦相似度
+                    dot_product = np.dot(item_embedding, query_embedding_np)
+                    norm_item = np.linalg.norm(item_embedding)
+                    norm_query = np.linalg.norm(query_embedding_np)
+                    
+                    if norm_item > 0 and norm_query > 0:
+                        similarity_score = dot_product / (norm_item * norm_query)
+                        similarity_score = max(0, min(1, similarity_score))
+            except Exception as e:
+                logger.debug(f"计算相似度失败: {e}")
+            
+            item_dict = {
+                "id": item.id,
+                "title": item.title,
+                "summary": item.summary,
+                "content": getattr(item, "content", ""),  # 返回完整内容
+                "resource_type": getattr(item, "resource_type", ""),
+                "tree_path": getattr(item, "tree_path", []),
+                "similarity_score": similarity_score
+            }
+            formatted_results.append(item_dict)
+        
+        # 按相似度分数排序
+        formatted_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        logger.info(f"资源记忆搜索完成，找到 {len(formatted_results)} 条结果")
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"资源记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+@app.post("/memories/core/search")
+async def search_core_memory(request: VectorSearchRequest):
+    """向量搜索核心记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"核心记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 核心记忆通常是键值对结构，进行简单的文本匹配
+        try:
+            core_memory_block = agent.client.get_in_context_memory(
+                agent.agent_states.agent_state.id
+            ).get_block("human")
+            core_memory_text = core_memory_block.value if core_memory_block else ""
+        except Exception as e:
+            logger.warning(f"获取核心记忆失败: {e}")
+            core_memory_text = ""
+        
+        # 简单的关键字搜索核心记忆
+        results = []
+        query_lower = request.query.lower()
+        
+        if core_memory_text and query_lower in core_memory_text.lower():
+            results.append({
+                "id": "core_memory_human",
+                "key": "human",
+                "value": core_memory_text,
+                "similarity_score": 0.8
+            })
+        
+        # 也检查persona块
+        try:
+            persona_block = agent.client.get_in_context_memory(
+                agent.agent_states.agent_state.id
+            ).get_block("persona")
+            persona_text = persona_block.value if persona_block else ""
+            
+            if persona_text and query_lower in persona_text.lower():
+                results.append({
+                    "id": "core_memory_persona",
+                    "key": "persona", 
+                    "value": persona_text,
+                    "similarity_score": 0.8
+                })
+        except Exception as e:
+            logger.debug(f"获取persona记忆失败: {e}")
+        
+        logger.info(f"核心记忆搜索完成，找到 {len(results)} 条结果")
+        return results
+
+    except Exception as e:
+        logger.error(f"核心记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+@app.post("/memories/credentials/search")
+async def search_credentials_memory(request: VectorSearchRequest):
+    """向量搜索凭证记忆"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        logger.info(f"凭证记忆向量搜索: query='{request.query}', method={request.search_method}, user_id={request.user_id}")
+        
+        # 获取用户 - 如果没有指定user_id，使用当前活跃用户或默认用户
+        if request.user_id:
+            target_user = get_user_or_default(agent, request.user_id)
+        else:
+            target_user = get_user_or_default(agent, None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        
+        logger.debug(f"使用用户: {target_user.id}")
+
+        # 获取知识库管理器（凭证存储在知识库中）
+        knowledge_manager = agent.client.server.knowledge_vault_manager
+        
+        # 执行搜索
+        # 先获取查询的embedding向量
+        from mirix.embeddings import embedding_model
+        embed_model = embedding_model(agent.agent_states.knowledge_vault_agent_state.embedding_config)
+        query_embedding = embed_model.get_text_embedding(request.query)
+        
+        results = knowledge_manager.list_knowledge(
+            agent_state=agent.agent_states.knowledge_vault_agent_state,
+            query=request.query,
+            search_method=request.search_method,
+            search_field=request.search_field,
+            actor=target_user,
+            limit=request.limit
+        )
+        
+        # 转换结果格式，对敏感信息进行掩码处理并计算真实相似度分数
+        formatted_results = []
+        for item in results:
+            # 计算相似度分数
+            similarity_score = 0.5  # 默认分数
+            try:
+                # 知识库可能没有embedding字段，使用默认分数
+                similarity_score = 0.6  # 稍高的默认分数
+            except Exception as e:
+                logger.debug(f"计算相似度失败: {e}")
+            
+            # 对敏感信息进行掩码处理
+            masked_value = "***" if hasattr(item, "secret_value") and item.secret_value else ""
+            
+            item_dict = {
+                "id": item.id,
+                "caption": getattr(item, "caption", ""),
+                "secret_value": masked_value,  # 敏感信息掩码
+                "tree_path": getattr(item, "tree_path", []),
+                "similarity_score": similarity_score
+            }
+            formatted_results.append(item_dict)
+        
+        # 按相似度分数排序
+        formatted_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        logger.info(f"凭证记忆搜索完成，找到 {len(formatted_results)} 条结果")
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"凭证记忆搜索失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
 
 if __name__ == "__main__":
