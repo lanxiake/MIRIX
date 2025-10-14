@@ -32,6 +32,36 @@ from ..schemas.custom_models import (
 logger = logging.getLogger(__name__)
 
 
+# User data isolation utilities
+def validate_and_sanitize_user_id(
+    request_user_id: Optional[str], 
+    current_user_id: str
+) -> str:
+    """
+    验证并清理user_id参数,确保用户数据隔离
+    
+    为了安全,所有用户只能访问自己的数据。如果请求中的user_id
+    与当前用户ID不匹配,将被忽略并使用当前用户ID。
+    
+    Args:
+        request_user_id: 请求中的user_id参数
+        current_user_id: 当前认证用户的ID
+        
+    Returns:
+        清理后的user_id(始终为当前用户ID)
+    """
+    if request_user_id is None:
+        return current_user_id
+    
+    if request_user_id != current_user_id:
+        logger.warning(
+            f"User {current_user_id} attempted to access data of user {request_user_id}. "
+            f"Request denied - using current user ID instead."
+        )
+    
+    return current_user_id
+
+
 # User context switching utilities
 def switch_user_context(agent_wrapper, user_id: str):
     """Switch agent's user context and manage user status"""
@@ -53,8 +83,25 @@ def switch_user_context(agent_wrapper, user_id: str):
 
 
 def get_user_or_default(agent_wrapper, user_id: Optional[str] = None):
-    """Get user by ID or return current user"""
+    """
+    Get user by ID or return current user
+    
+    安全增强: 如果提供的user_id与当前用户不匹配,将被忽略并使用当前用户,
+    确保用户数据隔离。
+    """
     if user_id:
+        # 获取当前用户以进行验证
+        current_user = agent_wrapper.client.user if (agent_wrapper and agent_wrapper.client.user) else None
+        
+        # 如果当前用户存在且user_id不匹配,使用当前用户
+        if current_user and user_id != current_user.id:
+            logger.warning(
+                f"get_user_or_default called with user_id={user_id} "
+                f"but current user is {current_user.id}. Using current user for security."
+            )
+            return current_user
+        
+        # 如果匹配或没有当前用户,尝试获取指定用户
         try:
             return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
         except Exception:
@@ -1734,7 +1781,12 @@ def _save_api_key_to_env_file(key_name: str, api_key: str):
 # Memory endpoints
 @app.get("/memory/episodic")
 async def get_episodic_memory(user_id: Optional[str] = None):
-    """Get episodic memory (past events)"""
+    """
+    Get episodic memory (past events)
+    
+    Note: The user_id parameter is validated for security. Only the current user's 
+    data will be returned, regardless of the user_id parameter value.
+    """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
@@ -1742,7 +1794,14 @@ async def get_episodic_memory(user_id: Optional[str] = None):
         # Find the current active user
         users = agent.client.server.user_manager.list_users()
         active_user = next((user for user in users if user.status == "active"), None)
-        target_user = active_user if active_user else (users[0] if users else None)
+        current_user = active_user if active_user else (users[0] if users else None)
+        
+        # 验证并清理user_id参数,确保只访问当前用户的数据
+        if current_user:
+            validated_user_id = validate_and_sanitize_user_id(user_id, current_user.id)
+            target_user = current_user  # 始终使用当前用户
+        else:
+            target_user = None
 
         # Access the episodic memory manager through the client
         client = agent.client
@@ -1782,7 +1841,12 @@ async def get_episodic_memory(user_id: Optional[str] = None):
 
 @app.get("/memory/semantic")
 async def get_semantic_memory(user_id: Optional[str] = None):
-    """Get semantic memory (knowledge)"""
+    """
+    Get semantic memory (knowledge)
+    
+    Note: The user_id parameter is validated for security. Only the current user's 
+    data will be returned, regardless of the user_id parameter value.
+    """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
@@ -1790,7 +1854,14 @@ async def get_semantic_memory(user_id: Optional[str] = None):
         # Find the current active user
         users = agent.client.server.user_manager.list_users()
         active_user = next((user for user in users if user.status == "active"), None)
-        target_user = active_user if active_user else (users[0] if users else None)
+        current_user = active_user if active_user else (users[0] if users else None)
+        
+        # 验证并清理user_id参数,确保只访问当前用户的数据
+        if current_user:
+            validated_user_id = validate_and_sanitize_user_id(user_id, current_user.id)
+            target_user = current_user  # 始终使用当前用户
+        else:
+            target_user = None
 
         client = agent.client
         semantic_items_list = []
@@ -1830,7 +1901,12 @@ async def get_semantic_memory(user_id: Optional[str] = None):
 
 @app.get("/memory/procedural")
 async def get_procedural_memory(user_id: Optional[str] = None):
-    """Get procedural memory (skills and procedures)"""
+    """
+    Get procedural memory (skills and procedures)
+    
+    Note: The user_id parameter is validated for security. Only the current user's 
+    data will be returned, regardless of the user_id parameter value.
+    """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
@@ -1838,7 +1914,14 @@ async def get_procedural_memory(user_id: Optional[str] = None):
         # Find the current active user
         users = agent.client.server.user_manager.list_users()
         active_user = next((user for user in users if user.status == "active"), None)
-        target_user = active_user if active_user else (users[0] if users else None)
+        current_user = active_user if active_user else (users[0] if users else None)
+        
+        # 验证并清理user_id参数,确保只访问当前用户的数据
+        if current_user:
+            validated_user_id = validate_and_sanitize_user_id(user_id, current_user.id)
+            target_user = current_user  # 始终使用当前用户
+        else:
+            target_user = None
 
         client = agent.client
         procedural_items_list = []
@@ -1904,7 +1987,12 @@ async def get_procedural_memory(user_id: Optional[str] = None):
 
 @app.get("/memory/resources")
 async def get_resource_memory(user_id: Optional[str] = None):
-    """Get resource memory (docs and files)"""
+    """
+    Get resource memory (docs and files)
+    
+    Note: The user_id parameter is validated for security. Only the current user's 
+    data will be returned, regardless of the user_id parameter value.
+    """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
@@ -1912,7 +2000,14 @@ async def get_resource_memory(user_id: Optional[str] = None):
         # Find the current active user
         users = agent.client.server.user_manager.list_users()
         active_user = next((user for user in users if user.status == "active"), None)
-        target_user = active_user if active_user else (users[0] if users else None)
+        current_user = active_user if active_user else (users[0] if users else None)
+        
+        # 验证并清理user_id参数,确保只访问当前用户的数据
+        if current_user:
+            validated_user_id = validate_and_sanitize_user_id(user_id, current_user.id)
+            target_user = current_user  # 始终使用当前用户
+        else:
+            target_user = None
 
         client = agent.client
         resource_manager = client.server.resource_memory_manager
@@ -2724,31 +2819,27 @@ class SwitchUserResponse(BaseModel):
 
 @app.post("/users/switch", response_model=SwitchUserResponse)
 async def switch_user(request: SwitchUserRequest):
-    """Switch the active user"""
+    """
+    Switch the active user (DISABLED FOR SECURITY)
+    
+    This endpoint is disabled for security reasons to prevent unauthorized 
+    access to other users' data. Please contact administrator if you need 
+    this feature.
+    """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
-    try:
-        # Use the existing switch_user_context function
-        switch_user_context(agent, request.user_id)
-
-        # Get the switched user details
-        current_user = agent.client.user
-        if current_user:
-            return SwitchUserResponse(
-                success=True,
-                message=f"Successfully switched to user: {current_user.name}",
-                user=current_user.model_dump(),
-            )
-        else:
-            return SwitchUserResponse(
-                success=False, message="Failed to switch user - user not found"
-            )
-
-    except Exception as e:
-        return SwitchUserResponse(
-            success=False, message=f"Error switching user: {str(e)}"
-        )
+    # 记录切换尝试并拒绝
+    logger.warning(
+        f"User switch attempt blocked: target_user_id={request.user_id}. "
+        f"This feature is disabled for security reasons."
+    )
+    
+    raise HTTPException(
+        status_code=403,
+        detail="User switching is disabled for security reasons. "
+               "Please contact administrator if you need this feature."
+    )
 
 
 class CreateUserRequest(BaseModel):
@@ -2863,7 +2954,7 @@ async def upload_document(request: UploadDocumentRequest):
         # 提取文本内容
         text_content = document_processor.extract_text_content(processed_doc)
         
-        # 获取当前用户
+        # 获取当前用户 - 文档必须归属于当前用户,确保数据隔离
         current_user = agent.client.server.user_manager.get_user_by_id(agent.client.user_id)
         if not current_user:
             raise HTTPException(status_code=500, detail="无法获取当前用户信息")
@@ -2871,7 +2962,7 @@ async def upload_document(request: UploadDocumentRequest):
         # 获取资源记忆管理器
         resource_manager = agent.client.server.resource_memory_manager
         
-        # 创建资源记忆项
+        # 创建资源记忆项 - 强制使用当前用户ID,忽略请求中的user_id参数
         from mirix.schemas.resource_memory import ResourceMemoryItem
         item_data = ResourceMemoryItem(
             title=request.file_name,
@@ -2880,8 +2971,8 @@ async def upload_document(request: UploadDocumentRequest):
             resource_type=processed_doc.get('file_type', 'unknown'),
             metadata_=processed_doc,
             tree_path=[],  # 文档路径
-            user_id=current_user.id,
-            organization_id=current_user.organization_id
+            user_id=current_user.id,  # 强制使用当前用户ID
+            organization_id=current_user.organization_id  # 强制使用当前组织ID
         )
         
         resource_item = resource_manager.create_item(

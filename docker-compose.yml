@@ -48,6 +48,7 @@ services:
     container_name: mirix-backend
     environment:
       # 数据库配置
+      MIRIX_PG_URI: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
       DATABASE_URL: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
 

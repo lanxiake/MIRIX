@@ -619,9 +619,16 @@ class SqlalchemyBase(CommonSqlalchemyMetaMixins, Base):
                 raise ValueError(f"object {actor} has no organization accessor")
             return query.where(cls.organization_id == org_id, cls.is_deleted == False)
         elif access_type == AccessType.USER:
+            # 强制要求actor参数,确保用户数据隔离
+            if actor is None:
+                raise ValueError(f"actor parameter is required for USER level access control")
+            
             user_id = getattr(actor, "id", None)
             if not user_id:
-                raise ValueError(f"object {actor} has no user accessor")
+                raise ValueError(f"object {actor} has no user accessor (id attribute)")
+            
+            # 强制按user_id过滤,所有用户一视同仁,不判断角色和权限
+            logger.debug(f"Applying USER level access control for {cls.__name__}: user_id={user_id}")
             return query.where(cls.user_id == user_id, cls.is_deleted == False)
         else:
             raise ValueError(f"unknown access_type: {access_type}")

@@ -22,6 +22,7 @@ from mirix.orm import Block as BlockModel
 from mirix.orm import Tool as ToolModel
 from mirix.orm.enums import ToolType
 from mirix.orm.errors import NoResultFound
+from mirix.orm.sqlalchemy_base import AccessType
 from mirix.orm.sandbox_config import (
     AgentEnvironmentVariable as AgentEnvironmentVariableModel,
 )
@@ -551,11 +552,12 @@ class AgentManager:
         with self.session_maker() as session:
             agents = AgentModel.list(
                 db_session=session,
+                actor=actor,
+                access_type=AccessType.ORGANIZATION,
                 tags=tags,
                 match_all_tags=match_all_tags,
                 cursor=cursor,
                 limit=limit,
-                organization_id=actor.organization_id if actor else None,
                 query_text=query_text,
                 **kwargs,
             )
