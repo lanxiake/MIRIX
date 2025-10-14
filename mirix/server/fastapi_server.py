@@ -3297,44 +3297,49 @@ async def search_core_memory(request: VectorSearchRequest):
         
         logger.debug(f"使用用户: {target_user.id}")
 
-        # 核心记忆通常是键值对结构，进行简单的文本匹配
+        # 核心记忆使用智能关键词搜索
         try:
-            core_memory_block = agent.client.get_in_context_memory(
+            core_memory = agent.client.get_in_context_memory(
                 agent.agent_states.agent_state.id
-            ).get_block("human")
-            core_memory_text = core_memory_block.value if core_memory_block else ""
+            )
         except Exception as e:
             logger.warning(f"获取核心记忆失败: {e}")
-            core_memory_text = ""
-        
-        # 简单的关键字搜索核心记忆
+            core_memory = None
+
         results = []
-        query_lower = request.query.lower()
-        
-        if core_memory_text and query_lower in core_memory_text.lower():
-            results.append({
-                "id": "core_memory_human",
-                "key": "human",
-                "value": core_memory_text,
-                "similarity_score": 0.8
-            })
-        
-        # 也检查persona块
-        try:
-            persona_block = agent.client.get_in_context_memory(
-                agent.agent_states.agent_state.id
-            ).get_block("persona")
-            persona_text = persona_block.value if persona_block else ""
-            
-            if persona_text and query_lower in persona_text.lower():
-                results.append({
-                    "id": "core_memory_persona",
-                    "key": "persona", 
-                    "value": persona_text,
-                    "similarity_score": 0.8
-                })
-        except Exception as e:
-            logger.debug(f"获取persona记忆失败: {e}")
+
+        if core_memory:
+            # 将查询分解为关键词（支持中文分词）
+            keywords = [k.strip().lower() for k in request.query.split() if k.strip()]
+
+            # 遍历所有核心记忆块
+            for block in core_memory.blocks:
+                if not block.value or not block.value.strip():
+                    continue
+
+                # 转换为小写进行匹配
+                block_lower = block.value.lower()
+
+                # 计算关键词匹配度
+                keyword_matches = sum(1 for kw in keywords if kw in block_lower)
+
+                if keyword_matches > 0:
+                    # 计算相似度分数：匹配的关键词数量 / 总关键词数量
+                    # 基础分数0.5，最高可达0.95
+                    match_ratio = keyword_matches / len(keywords) if keywords else 0.5
+                    similarity_score = min(0.95, 0.5 + match_ratio * 0.45)
+
+                    results.append({
+                        "id": f"core_memory_{block.label}",
+                        "key": block.label,
+                        "value": block.value,
+                        "similarity_score": similarity_score
+                    })
+
+                    logger.debug(f"核心记忆块 '{block.label}' 匹配到 {keyword_matches}/{len(keywords)} 个关键词，相似度: {similarity_score:.2f}")
+
+        # 按相似度分数排序
+        results.sort(key=lambda x: x["similarity_score"], reverse=True)
         
         logger.info(f"核心记忆搜索完成，找到 {len(results)} 条结果")
         return results

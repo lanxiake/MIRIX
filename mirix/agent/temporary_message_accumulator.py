@@ -534,18 +534,45 @@ class TemporaryMessageAccumulator:
         # Handle user conversation if exists
         message, user_message_added = self._add_user_conversation_to_message(message)
 
+        # 检测消息中的语言
+        def detect_chinese_content(messages):
+            """检测消息中是否包含中文内容"""
+            import re
+            chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
+            
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("type") == "text":
+                    text = msg.get("text", "")
+                    if chinese_pattern.search(text):
+                        return True
+            return False
+        
+        is_chinese = detect_chinese_content(message)
+        
         if SKIP_META_MEMORY_MANAGER:
             # Add system instruction
             if user_message_added:
-                system_message = "[System Message] Interpret the provided content and the conversations between the user and the chat agent, according to what the user is doing, trigger the appropriate memory update."
+                if is_chinese:
+                    system_message = "[系统消息] 解读提供的内容和用户与聊天代理之间的对话，根据用户正在做的事情，触发适当的记忆更新。重要：请使用与用户输入相同的语言处理和存储记忆内容。"
+                else:
+                    system_message = "[System Message] Interpret the provided content and the conversations between the user and the chat agent, according to what the user is doing, trigger the appropriate memory update. Important: Use the same language as the user's input for processing and storing memory content."
             else:
-                system_message = "[System Message] Interpret the provided content, according to what the user is doing, extract the important information matching your memory type and save it into the memory."
+                if is_chinese:
+                    system_message = "[系统消息] 解读提供的内容，根据用户正在做的事情，提取与你的记忆类型匹配的重要信息并保存到记忆中。重要：请使用与用户输入相同的语言处理和存储记忆内容。"
+                else:
+                    system_message = "[System Message] Interpret the provided content, according to what the user is doing, extract the important information matching your memory type and save it into the memory. Important: Use the same language as the user's input for processing and storing memory content."
         else:
             # Add system instruction for meta memory manager
             if user_message_added:
-                system_message = "[System Message] As the meta memory manager, analyze the provided content and the conversations between the user and the chat agent. Based on what the user is doing, determine which memory should be updated (episodic, procedural, knowledge vault, semantic, core, and resource)."
+                if is_chinese:
+                    system_message = "[系统消息] 作为元记忆管理器，分析提供的内容和用户与聊天代理之间的对话。根据用户正在做的事情，确定应该更新哪些记忆（情景、程序、知识库、语义、核心和资源）。重要：确保所有记忆更新都使用与用户输入相同的语言。"
+                else:
+                    system_message = "[System Message] As the meta memory manager, analyze the provided content and the conversations between the user and the chat agent. Based on what the user is doing, determine which memory should be updated (episodic, procedural, knowledge vault, semantic, core, and resource). Important: Ensure all memory updates use the same language as the user's input."
             else:
-                system_message = "[System Message] As the meta memory manager, analyze the provided content. Based on the content, determine what memories need to be updated (episodic, procedural, knowledge vault, semantic, core, and resource)"
+                if is_chinese:
+                    system_message = "[系统消息] 作为元记忆管理器，分析提供的内容。根据内容，确定需要更新哪些记忆（情景、程序、知识库、语义、核心和资源）。重要：确保所有记忆更新都使用与用户输入相同的语言。"
+                else:
+                    system_message = "[System Message] As the meta memory manager, analyze the provided content. Based on the content, determine what memories need to be updated (episodic, procedural, knowledge vault, semantic, core, and resource). Important: Ensure all memory updates use the same language as the user's input."
 
         message.append({"type": "text", "text": system_message})
 

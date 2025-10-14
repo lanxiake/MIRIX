@@ -499,12 +499,24 @@ def trigger_memory_update_with_instruction(
     if matching_agent is None:
         raise ValueError(f"No agent found with type '{agent_type}'")
 
+    # 检测指令中的语言并生成相应的前缀
+    def detect_chinese_in_text(text):
+        """检测文本中是否包含中文内容"""
+        import re
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
+        return chinese_pattern.search(text) is not None
+    
+    # 根据指令语言生成相应的前缀消息
+    if detect_chinese_in_text(instruction):
+        message_prefix = "[来自聊天代理的消息（现在允许你按顺序进行多个函数调用）] "
+    else:
+        message_prefix = "[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] "
+    
     client.send_message(
         role="user",
         user_id=self.user.id,
         agent_id=matching_agent.id,
-        message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] "
-        + instruction,
+        message=message_prefix + instruction,
         existing_file_uris=user_message["existing_file_uris"],
         retrieved_memories=user_message.get("retrieved_memories", None),
     )
@@ -573,9 +585,30 @@ def trigger_memory_update(
         if user_message["message"][-1]["type"] == "text" and user_message["message"][
             -1
         ]["text"].startswith("[System Message]"):
-            user_message["message"][-1]["text"] = (
-                "[System Message] Interpret the provided content, extract the important information matching your memory type and save it into the memory."
-            )
+            # 检测用户消息中的语言并生成相应的系统消息
+            def detect_chinese_content(messages):
+                """检测消息中是否包含中文内容"""
+                import re
+                chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
+                
+                for msg in messages:
+                    if isinstance(msg, dict) and msg.get("type") == "text":
+                        text = msg.get("text", "")
+                        if chinese_pattern.search(text):
+                            return True
+                return False
+            
+            # 根据检测到的语言生成相应的系统消息
+            if detect_chinese_content(user_message["message"]):
+                user_message["message"][-1]["text"] = (
+                    "[系统消息] 解读提供的内容，提取与你的记忆类型匹配的重要信息并保存到记忆中。"
+                    "重要：请使用与用户输入相同的语言处理和存储记忆内容。如果用户使用中文，所有记忆内容都应保持中文。"
+                )
+            else:
+                user_message["message"][-1]["text"] = (
+                    "[System Message] Interpret the provided content, extract the important information matching your memory type and save it into the memory. "
+                    "Important: Use the same language as the user's input for processing and storing memory content."
+                )
 
         # Prepare payloads for message queue
         payloads = {
