@@ -9,7 +9,6 @@ from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
 from dotenv import load_dotenv
 from mirix import Mirix
 import logging
-from collections import deque
 load_dotenv()
 
 # Configuration
@@ -97,7 +96,7 @@ async def run_agent():
     user = mirix_agent.create_user(user_name="Alice")
     
     # Track conversation for memory updates
-    conversation_history = deque(maxlen=KEEP_LAST_N_TURNS)
+    conversation_history = []
     turn_count = 0
     turns_since_reinit = 0
     session_id = None
@@ -140,8 +139,6 @@ async def run_agent():
                 # Query with updated system prompt - SDK maintains conversation history
                 async for message in query(prompt=user_input, options=options):
 
-                    print("Message: ", message)
-
                     # The first message is a system init message with the session ID
                     if hasattr(message, 'subtype') and message.subtype == 'init':
                         session_id = message.data.get('session_id')
@@ -164,6 +161,9 @@ async def run_agent():
                         
                 # Update conversation history
                 conversation_history.append((user_input, assistant_response))
+                # Keep only last N turns
+                if len(conversation_history) > KEEP_LAST_N_TURNS:
+                    conversation_history = conversation_history[-KEEP_LAST_N_TURNS:]
                 turn_count += 1
                 turns_since_reinit += 1
                 
@@ -173,16 +173,16 @@ async def run_agent():
                     
                     # Combine recent conversations for Mirix
                     combined_conversation = ""
-                    for user_msg, assistant_msg in conversation_history:
+                    for user_msg, assistant_msg in conversation_history[-MEMORY_UPDATE_INTERVAL:]:
                         combined_conversation += f"[User] {user_msg}\n\n[Assistant] {assistant_msg}\n\n"
                     
-                    # Send to Mirix
-                    await asyncio.to_thread(
+                    # Send to Mirix (non-blocking - runs in background)
+                    asyncio.create_task(asyncio.to_thread(
                         mirix_agent.add,
                         combined_conversation.strip(),
                         user_id=user.id
-                    )
-                    print(f"✅ Memory updated! System prompt will be refreshed in {REINIT_INTERVAL - turns_since_reinit} turns.\n")
+                    ))
+                    print(f"💾 Memory update started in background. System prompt will be refreshed in {REINIT_INTERVAL - turns_since_reinit} turns.\n")
                 
             except KeyboardInterrupt:
                 print("\n👋 Goodbye!")
