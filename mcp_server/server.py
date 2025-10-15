@@ -9,7 +9,6 @@ import asyncio
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Union
-from urllib.parse import parse_qs
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import (
@@ -17,9 +16,6 @@ from mcp.types import (
     ImageContent,
     EmbeddedResource,
 )
-from starlette.requests import Request
-from starlette.responses import Response
-from starlette.routing import Route
 
 from .config import MCPServerConfig
 from .mirix_adapter import MIRIXAdapter
@@ -823,53 +819,44 @@ class MCPServer:
             await self.session_manager.start_cleanup_task()
 
             # 获取 FastMCP 的 Starlette 应用
-            app = self.mcp.sse_app()
+            base_app = self.mcp.sse_app()
 
-            # 添加会话管理中间件
-            from starlette.middleware.base import BaseHTTPMiddleware
+            # 创建包装应用以添加会话管理功能
+            async def session_wrapper_app(scope, receive, send):
+                """会话管理包装器，不干扰 SSE 流"""
+                # 只处理 HTTP 请求
+                if scope["type"] == "http":
+                    # 解析查询参数
+                    query_string = scope.get("query_string", b"").decode("utf-8")
+                    from urllib.parse import parse_qs
+                    query_params = parse_qs(query_string)
 
-            class SessionMiddleware(BaseHTTPMiddleware):
-                def __init__(self, app, session_manager, config):
-                    super().__init__(app)
-                    self.session_manager = session_manager
-                    self.config = config
+                    # 获取 user_id 和 session_id
+                    user_id = query_params.get("user_id", [self.config.default_user_id])[0]
+                    session_id = query_params.get("session_id", [None])[0]
 
-                async def dispatch(self, request: Request, call_next):
-                    # 解析 URL 参数获取 user_id
-                    query_params = dict(request.query_params)
-                    user_id = query_params.get("user_id", self.config.default_user_id)
-
-                    # 为此连接创建或获取会话
-                    session_id = query_params.get("session_id")
                     if not session_id:
                         session_id = str(uuid.uuid4())
 
-                    # 创建会话
+                    # 创建或获取会话
                     await self.session_manager.create_session(user_id, session_id)
 
                     # 设置会话上下文
                     self.session_manager.set_session_context(session_id, user_id)
 
-                    logger.info(f"处理请求: path={request.url.path}, user_id={user_id}, session_id={session_id}")
+                    logger.info(f"处理请求: path={scope['path']}, user_id={user_id}, session_id={session_id}")
 
-                    try:
-                        response = await call_next(request)
-                        return response
-                    finally:
-                        # 请求完成后不清除上下文，保持会话活跃
-                        pass
-
-            # 包装应用
-            app.add_middleware(SessionMiddleware, session_manager=self.session_manager, config=self.config)
+                # 调用原始应用
+                await base_app(scope, receive, send)
 
             logger.info("SSE MCP 服务器已启动，等待客户端连接...")
             logger.info(f"SSE连接端点: http://{self.config.sse_host}:{self.config.sse_port}{self.config.sse_endpoint}")
             logger.info(f"支持URL参数: user_id (指定用户ID), session_id (可选，自动生成)")
 
-            # 使用uvicorn运行Starlette应用
+            # 使用uvicorn运行包装后的应用
             import uvicorn
             config = uvicorn.Config(
-                app,
+                session_wrapper_app,
                 host=self.config.sse_host,
                 port=self.config.sse_port,
                 log_level="info"

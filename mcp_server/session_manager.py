@@ -96,7 +96,7 @@ class SessionManager:
 
     async def create_session(self, user_id: str, session_id: Optional[str] = None) -> str:
         """
-        创建新会话
+        创建新会话或获取已存在的会话
 
         Args:
             user_id: 用户ID
@@ -110,7 +110,15 @@ class SessionManager:
             if session_id is None:
                 session_id = str(uuid.uuid4())
 
-            # 创建会话对象
+            # 检查会话是否已存在
+            if session_id in self._sessions:
+                existing_session = self._sessions[session_id]
+                # 更新活动时间
+                existing_session.update_activity()
+                logger.debug(f"会话已存在，更新活动时间: session_id={session_id}, user_id={user_id}")
+                return session_id
+
+            # 创建新会话对象
             session = Session(
                 session_id=session_id,
                 user_id=user_id
@@ -124,7 +132,7 @@ class SessionManager:
                 self._user_sessions[user_id] = set()
             self._user_sessions[user_id].add(session_id)
 
-            logger.info(f"创建会话: session_id={session_id}, user_id={user_id}")
+            logger.info(f"创建新会话: session_id={session_id}, user_id={user_id}")
             logger.info(f"用户 {user_id} 当前活跃会话数: {len(self._user_sessions[user_id])}")
 
             return session_id
