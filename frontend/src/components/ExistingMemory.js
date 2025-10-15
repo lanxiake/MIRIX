@@ -5,7 +5,7 @@ import UploadExportModal from './UploadExportModal';
 import queuedFetch from '../utils/requestQueue';
 import { useTranslation } from 'react-i18next';
 
-const ExistingMemory = ({ settings }) => {
+const ExistingMemory = ({ settings, currentUser }) => {
   const { t } = useTranslation();
   const [activeSubTab, setActiveSubTab] = useState('past-events');
   const [memoryData, setMemoryData] = useState({
@@ -125,7 +125,7 @@ const ExistingMemory = ({ settings }) => {
           return;
       }
 
-      const response = await queuedFetch(`${settings.serverUrl}${endpoint}`);
+      const response = await queuedFetch(`${settings.serverUrl}${endpoint}${currentUser ? `?user_id=${currentUser.id}` : ''}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch ${memoryType}: ${response.statusText}`);
       }

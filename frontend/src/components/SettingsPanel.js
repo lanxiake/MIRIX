@@ -4,7 +4,7 @@ import queuedFetch from '../utils/requestQueue';
 import LocalModelModal from './LocalModelModal';
 import { useTranslation } from 'react-i18next';
 
-const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequired, isVisible }) => {
+const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequired, isVisible, currentUser, onCurrentUserChange }) => {
   const { t, i18n } = useTranslation();
   const [personaDetails, setPersonaDetails] = useState({});
   const [selectedPersonaText, setSelectedPersonaText] = useState('');
@@ -37,10 +37,12 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   const [gmailCredentials, setGmailCredentials] = useState({ clientId: '', clientSecret: '' });
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
+  const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   // Debug logging for settings
   useEffect(() => {
@@ -292,14 +294,14 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         console.log('Users data:', data);
         const usersList = data.users || [];
         setUsers(usersList);
-        
+
         // Set current user (find user with active status)
         const activeUser = usersList.find(user => user.status === 'active');
         if (activeUser) {
-          setCurrentUser(activeUser);
+          onCurrentUserChange(activeUser);
         } else if (!currentUser && usersList.length > 0) {
           // Fallback: if no active user found, use first user
-          setCurrentUser(usersList[0]);
+          onCurrentUserChange(usersList[0]);
         }
       } else {
         console.error('Failed to fetch users');
@@ -309,7 +311,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [settings.serverUrl]);
+  }, [settings.serverUrl, currentUser, onCurrentUserChange]);
 
   const searchMcpMarketplace = useCallback(async (query = '') => {
     if (!settings.serverUrl) {
@@ -470,20 +472,20 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     if (!settings.serverUrl) {
       return;
     }
-    
+
     try {
       console.log('Switching to user:', selectedUser);
-      
+
       const response = await queuedFetch(`${settings.serverUrl}/users/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: selectedUser.id })
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setCurrentUser(selectedUser);
+          onCurrentUserChange(selectedUser);
           console.log('Successfully switched to user:', data.user);
           // Refresh users list to update status
           await fetchUsers();
@@ -498,34 +500,34 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     } finally {
       setIsUserDropdownOpen(false);
     }
-  }, [settings.serverUrl, fetchUsers]);
+  }, [settings.serverUrl, fetchUsers, onCurrentUserChange]);
 
   const handleCreateUser = useCallback(async () => {
     if (!settings.serverUrl || !newUserName.trim()) {
       return;
     }
-    
+
     try {
       const response = await queuedFetch(`${settings.serverUrl}/users/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newUserName.trim() })
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log('User created successfully:', data);
-        
+
         // Refresh users list
         await fetchUsers();
-        
+
         // Close modal and reset form
         setShowAddUserModal(false);
         setNewUserName('');
-        
+
         // Set the new user as current user
         if (data.user) {
-          setCurrentUser(data.user);
+          onCurrentUserChange(data.user);
         }
       } else {
         console.error('Failed to create user');
@@ -533,7 +535,67 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     } catch (error) {
       console.error('Error creating user:', error);
     }
-  }, [settings.serverUrl, newUserName, fetchUsers]);
+  }, [settings.serverUrl, newUserName, fetchUsers, onCurrentUserChange]);
+
+  const handleDeleteUser = useCallback(async (user) => {
+    if (!settings.serverUrl) {
+      return;
+    }
+
+    setUserToDelete(user);
+    setShowDeleteUserConfirm(true);
+  }, [settings.serverUrl]);
+
+  const confirmDeleteUser = useCallback(async () => {
+    if (!userToDelete || !settings.serverUrl) {
+      return;
+    }
+
+    setIsDeletingUser(true);
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/users/${userToDelete.id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          console.log('User deleted successfully:', data);
+
+          // If deleted user was current user, switch to another user
+          if (currentUser?.id === userToDelete.id) {
+            const remainingUsers = users.filter(u => u.id !== userToDelete.id);
+            if (remainingUsers.length > 0) {
+              onCurrentUserChange(remainingUsers[0]);
+            } else {
+              onCurrentUserChange(null);
+            }
+          }
+
+          // Refresh users list
+          await fetchUsers();
+
+          // Close modal and reset
+          setShowDeleteUserConfirm(false);
+          setUserToDelete(null);
+        } else {
+          alert(data.message || 'Failed to delete user');
+        }
+      } else {
+        alert('Failed to delete user - server error');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Error deleting user');
+    } finally {
+      setIsDeletingUser(false);
+    }
+  }, [userToDelete, settings.serverUrl, currentUser, users, fetchUsers, onCurrentUserChange]);
+
+  const cancelDeleteUser = useCallback(() => {
+    setShowDeleteUserConfirm(false);
+    setUserToDelete(null);
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1547,20 +1609,32 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
                     <div className="user-dropdown-list">
                       {users.length > 0 ? (
                         users.map(user => (
-                          <div 
-                            key={user.id} 
+                          <div
+                            key={user.id}
                             className={`user-dropdown-item ${currentUser?.id === user.id ? 'selected' : ''}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUserSelection(user);
-                            }}
                           >
-                            <div className="user-dropdown-info">
+                            <div
+                              className="user-dropdown-info"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUserSelection(user);
+                              }}
+                            >
                               <span className="user-dropdown-name">{user.name}</span>
+                              {currentUser?.id === user.id && (
+                                <span className="selected-indicator">✓</span>
+                              )}
                             </div>
-                            {currentUser?.id === user.id && (
-                              <span className="selected-indicator">✓</span>
-                            )}
+                            <button
+                              className="delete-user-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteUser(user);
+                              }}
+                              title={t('settings.userSelection.deleteUser')}
+                            >
+                              🗑️
+                            </button>
                           </div>
                         ))
                       ) : (
@@ -1735,7 +1809,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
               <p className="add-user-description">
                 {t('settings.modals.addUser.description')}
               </p>
-              
+
               <div className="add-user-form">
                 <div className="form-group">
                   <label htmlFor="new-user-name">{t('settings.modals.addUser.userName')}</label>
@@ -1751,17 +1825,49 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
                 </div>
               </div>
             </div>
-            
+
             <div className="modal-footer">
               <button className="modal-btn secondary" onClick={() => setShowAddUserModal(false)}>
                 {t('settings.modals.addUser.cancel')}
               </button>
-              <button 
-                className="modal-btn primary" 
+              <button
+                className="modal-btn primary"
                 onClick={handleCreateUser}
                 disabled={!newUserName.trim()}
               >
                 {t('settings.modals.addUser.createButton')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {showDeleteUserConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content delete-confirm-modal">
+            <div className="modal-header">
+              <h3>{t('settings.modals.deleteUser.title')}</h3>
+            </div>
+            <div className="modal-body">
+              <p>{t('settings.modals.deleteUser.description')}</p>
+              <p><strong>{userToDelete?.name}</strong></p>
+              <p className="warning-text">{t('settings.modals.deleteUser.warning')}</p>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="cancel-button"
+                onClick={cancelDeleteUser}
+                disabled={isDeletingUser}
+              >
+                {t('settings.modals.deleteUser.cancel')}
+              </button>
+              <button
+                className="delete-button"
+                onClick={confirmDeleteUser}
+                disabled={isDeletingUser}
+              >
+                {isDeletingUser ? t('settings.states.deleting') : t('settings.modals.deleteUser.deleteButton')}
               </button>
             </div>
           </div>

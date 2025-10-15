@@ -27,6 +27,9 @@ function App() {
   // Screen monitoring state to share between ChatWindow and ScreenshotMonitor
   const [isScreenMonitoring, setIsScreenMonitoring] = useState(false);
 
+  // Current user state - lift from SettingsPanel to App level for global access
+  const [currentUser, setCurrentUser] = useState(null);
+
   // API Key modal state
   const [apiKeyModal, setApiKeyModal] = useState({
     isOpen: false,
@@ -390,6 +393,7 @@ function App() {
             messages={chatMessages}
             setMessages={setChatMessages}
             isScreenMonitoring={isScreenMonitoring}
+            currentUser={currentUser}
             onApiKeyRequired={(missingKeys, modelType) => {
               setApiKeyModal({
                 isOpen: true,
@@ -407,13 +411,18 @@ function App() {
           />
         </div>
         {activeTab === 'memory' && (
-          <ExistingMemory settings={settings} />
+          <ExistingMemory
+            settings={settings}
+            currentUser={currentUser}
+          />
         )}
         {activeTab === 'settings' && (
           <SettingsPanel
             settings={settings}
             onSettingsChange={handleSettingsChange}
             onApiKeyCheck={checkApiKeys}
+            currentUser={currentUser}
+            onCurrentUserChange={setCurrentUser}
             onApiKeyRequired={(missingKeys, modelType, pendingModel, changeType, retryFunction) => {
               setApiKeyModal({
                 isOpen: true,

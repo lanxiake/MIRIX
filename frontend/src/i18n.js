@@ -100,6 +100,7 @@ const resources = {
           noUsersAvailable: 'No users available',
           addUser: 'Add User',
           addUserTooltip: 'Add New User',
+          deleteUser: 'Delete User',
           description: 'Select the current user context for the application.'
         },
         modals: {
@@ -123,6 +124,13 @@ const resources = {
             userName: 'User Name:',
             userNamePlaceholder: 'Enter user name',
             createButton: 'Create User',
+            cancel: 'Cancel'
+          },
+          deleteUser: {
+            title: 'Delete User',
+            description: 'Are you sure you want to delete this user?',
+            warning: 'This action cannot be undone!',
+            deleteButton: 'Delete User',
             cancel: 'Cancel'
           },
           apiKey: {
@@ -653,6 +661,7 @@ const resources = {
           noUsersAvailable: '没有可用用户',
           addUser: '添加用户',
           addUserTooltip: '添加新用户',
+          deleteUser: '删除用户',
           description: '为应用程序选择当前用户上下文。'
         },
         modals: {
@@ -676,6 +685,13 @@ const resources = {
             userName: '用户名：',
             userNamePlaceholder: '输入用户名',
             createButton: '创建用户',
+            cancel: '取消'
+          },
+          deleteUser: {
+            title: '删除用户',
+            description: '确定要删除此用户吗？',
+            warning: '此操作无法撤销！',
+            deleteButton: '删除用户',
             cancel: '取消'
           },
           apiKey: {

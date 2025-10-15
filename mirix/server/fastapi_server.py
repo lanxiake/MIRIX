@@ -2894,6 +2894,70 @@ async def create_user(request: CreateUserRequest):
         )
 
 
+class DeleteUserResponse(BaseModel):
+    success: bool
+    message: str
+
+
+@app.delete("/users/{user_id}", response_model=DeleteUserResponse)
+async def delete_user(user_id: str):
+    """Delete a user from the system
+
+    注意：无法删除默认用户(ID为user-00000000...)
+    """
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        # 检查是否为默认用户
+        if user_id.startswith("user-00000000"):
+            return DeleteUserResponse(
+                success=False,
+                message="无法删除默认用户"
+            )
+
+        # 检查用户是否存在
+        try:
+            user = agent.client.server.user_manager.get_user_by_id(user_id)
+            if not user:
+                return DeleteUserResponse(
+                    success=False,
+                    message=f"用户不存在: {user_id}"
+                )
+        except Exception as e:
+            return DeleteUserResponse(
+                success=False,
+                message=f"用户不存在: {user_id}"
+            )
+
+        # 检查是否为当前活跃用户
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((u for u in users if u.status == "active"), None)
+
+        if active_user and active_user.id == user_id:
+            return DeleteUserResponse(
+                success=False,
+                message="无法删除当前活跃用户，请先切换到其他用户"
+            )
+
+        # 删除用户
+        agent.client.server.user_manager.delete_user_by_id(user_id)
+
+        logger.info(f"用户已删除: {user_id} ({user.name})")
+
+        return DeleteUserResponse(
+            success=True,
+            message=f"用户 '{user.name}' 已成功删除"
+        )
+
+    except Exception as e:
+        logger.error(f"删除用户失败: {str(e)}")
+        return DeleteUserResponse(
+            success=False,
+            message=f"删除用户时发生错误: {str(e)}"
+        )
+
+
 @app.post("/documents/upload", response_model=UploadDocumentResponse)
 async def upload_document(request: UploadDocumentRequest):
     """
