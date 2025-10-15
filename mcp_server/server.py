@@ -7,7 +7,9 @@ MCP Server 核心实现 - 纯SSE模式
 
 import asyncio
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import parse_qs
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import (
@@ -15,9 +17,13 @@ from mcp.types import (
     ImageContent,
     EmbeddedResource,
 )
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route
 
 from .config import MCPServerConfig
 from .mirix_adapter import MIRIXAdapter
+from .session_manager import get_session_manager, SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +48,15 @@ class MCPServer:
         # 初始化 MIRIX 适配器
         self.mirix_adapter = MIRIXAdapter(config)
 
+        # 初始化会话管理器
+        self.session_manager = get_session_manager()
+
         # 设置工具
         self._setup_tools()
 
         logger.info(f"MCP Server 初始化完成 - {config.server_name} v{config.server_version}")
         logger.info(f"SSE 模式配置: {config.sse_host}:{config.sse_port}")
+        logger.info("会话管理器已就绪，支持多用户和多会话")
 
     def _setup_tools(self):
         """设置 MCP 工具"""
@@ -144,7 +154,11 @@ class MCPServer:
                 "成功添加记忆: 已保存技术选型决策到semantic记忆"
             """
             try:
-                user_id = self.config.default_user_id
+                # 从会话上下文获取 user_id
+                user_id = self.session_manager.get_current_user_id()
+                if not user_id:
+                    user_id = self.config.default_user_id
+                    logger.warning(f"未找到会话上下文中的user_id，使用默认值: {user_id}")
 
                 logger.info(f"添加记忆: user_id={user_id}, content={content[:100]}...")
 
@@ -305,7 +319,11 @@ class MCPServer:
                 "根据您团队的Docker经验分析，建议采用以下CI/CD策略：\\n\\n1. 基于历史部署问题的改进..."
             """
             try:
-                user_id = self.config.default_user_id
+                # 从会话上下文获取 user_id
+                user_id = self.session_manager.get_current_user_id()
+                if not user_id:
+                    user_id = self.config.default_user_id
+                    logger.warning(f"未找到会话上下文中的user_id，使用默认值: {user_id}")
 
                 logger.info(f"记忆对话: user_id={user_id}, message={message[:100]}...")
 
@@ -465,7 +483,11 @@ class MCPServer:
                 "找到 5 条相关记忆 (向量搜索):\\n[episodic|0.91] 解决PostgreSQL连接池超时问题..."
             """
             try:
-                user_id = self.config.default_user_id
+                # 从会话上下文获取 user_id
+                user_id = self.session_manager.get_current_user_id()
+                if not user_id:
+                    user_id = self.config.default_user_id
+                    logger.warning(f"未找到会话上下文中的user_id，使用默认值: {user_id}")
 
                 logger.info(f"搜索记忆: user_id={user_id}, query={query}, types={memory_types}, limit={limit}")
 
@@ -476,7 +498,7 @@ class MCPServer:
                     invalid_types = [t for t in memory_types if t not in valid_types]
                     if invalid_types:
                         return f"无效的记忆类型: {', '.join(invalid_types)}。支持的类型: {', '.join(valid_types)}"
-                    
+
                     logger.debug(f"使用向量搜索指定类型: {memory_types}")
                     result = await self.mirix_adapter.search_memories_by_vector(
                         query=query,
@@ -754,7 +776,11 @@ class MCPServer:
                 "文件上传成功！\\n文档ID: doc_fastapi_template_001\\n已添加到代码模板库"
             """
             try:
-                user_id = self.config.default_user_id
+                # 从会话上下文获取 user_id
+                user_id = self.session_manager.get_current_user_id()
+                if not user_id:
+                    user_id = self.config.default_user_id
+                    logger.warning(f"未找到会话上下文中的user_id，使用默认值: {user_id}")
 
                 logger.info(f"上传资源: user_id={user_id}, file_name={file_name}, file_type={file_type}")
 
@@ -793,11 +819,52 @@ class MCPServer:
         logger.info(f"服务端点: {self.config.sse_endpoint}")
 
         try:
+            # 启动会话清理任务
+            await self.session_manager.start_cleanup_task()
+
             # 获取 FastMCP 的 Starlette 应用
             app = self.mcp.sse_app()
 
+            # 添加会话管理中间件
+            from starlette.middleware.base import BaseHTTPMiddleware
+
+            class SessionMiddleware(BaseHTTPMiddleware):
+                def __init__(self, app, session_manager, config):
+                    super().__init__(app)
+                    self.session_manager = session_manager
+                    self.config = config
+
+                async def dispatch(self, request: Request, call_next):
+                    # 解析 URL 参数获取 user_id
+                    query_params = dict(request.query_params)
+                    user_id = query_params.get("user_id", self.config.default_user_id)
+
+                    # 为此连接创建或获取会话
+                    session_id = query_params.get("session_id")
+                    if not session_id:
+                        session_id = str(uuid.uuid4())
+
+                    # 创建会话
+                    await self.session_manager.create_session(user_id, session_id)
+
+                    # 设置会话上下文
+                    self.session_manager.set_session_context(session_id, user_id)
+
+                    logger.info(f"处理请求: path={request.url.path}, user_id={user_id}, session_id={session_id}")
+
+                    try:
+                        response = await call_next(request)
+                        return response
+                    finally:
+                        # 请求完成后不清除上下文，保持会话活跃
+                        pass
+
+            # 包装应用
+            app.add_middleware(SessionMiddleware, session_manager=self.session_manager, config=self.config)
+
             logger.info("SSE MCP 服务器已启动，等待客户端连接...")
             logger.info(f"SSE连接端点: http://{self.config.sse_host}:{self.config.sse_port}{self.config.sse_endpoint}")
+            logger.info(f"支持URL参数: user_id (指定用户ID), session_id (可选，自动生成)")
 
             # 使用uvicorn运行Starlette应用
             import uvicorn
@@ -813,6 +880,9 @@ class MCPServer:
         except Exception as e:
             logger.error(f"SSE 服务器运行失败: {e}")
             raise
+        finally:
+            # 停止会话清理任务
+            await self.session_manager.stop_cleanup_task()
 
     async def shutdown(self):
         """优雅关闭服务器"""
