@@ -3,7 +3,7 @@ import queuedFetch from '../utils/requestQueue';
 import './UploadExportModal.css';
 import { useTranslation } from 'react-i18next';
 
-function UploadExportModal({ isOpen, onClose, settings }) {
+function UploadExportModal({ isOpen, onClose, settings, currentUser }) {
   const { t } = useTranslation();
   const fileInputRef = useRef(null);
   const [selectedMemoryTypes, setSelectedMemoryTypes] = useState({
@@ -133,7 +133,7 @@ function UploadExportModal({ isOpen, onClose, settings }) {
             file_name: fileName,
             file_type: fileName.split('.').pop().toLowerCase(),
             content: fileContent,
-            user_id: null
+            user_id: currentUser?.id || null
           }),
         });
 

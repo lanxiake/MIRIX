@@ -65,7 +65,13 @@ class MessageManager:
         with self.session_maker() as session:
             # Set the organization id and user id of the Pydantic message
             pydantic_msg.organization_id = actor.organization_id
-            pydantic_msg.user_id = actor.id
+            # System messages should use a default system user ID to ensure they are always accessible
+            if pydantic_msg.role != "system":
+                pydantic_msg.user_id = actor.id
+            else:
+                # Use default user ID for system messages
+                from mirix.services.user_manager import UserManager
+                pydantic_msg.user_id = UserManager.DEFAULT_USER_ID
             msg_data = pydantic_msg.model_dump()
             msg = MessageModel(**msg_data)
             msg.create(session, actor=actor)  # Persist to database

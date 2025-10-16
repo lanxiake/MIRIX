@@ -14,6 +14,7 @@ from mirix.schemas.memory import Memory
 from mirix.schemas.message import Message, MessageCreate
 from mirix.schemas.tool_rule import ToolRule
 from mirix.schemas.user import User
+from mirix.services.user_manager import UserManager
 from mirix.utils import get_local_time
 
 
@@ -293,7 +294,7 @@ def package_initial_message_sequence(
                 role=message_create.role,
                 text=packed_message,
                 organization_id=actor.organization_id,
-                user_id=actor.id,
+                user_id=actor.id if message_create.role != MessageRole.system else UserManager.DEFAULT_USER_ID,
                 agent_id=agent_id,
                 model=model,
             )

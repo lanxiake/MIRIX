@@ -680,10 +680,19 @@ class AgentManager:
         messages = self.message_manager.get_messages_by_ids(
             message_ids=message_ids, actor=actor
         )
-        messages = [messages[0]] + [
-            message for message in messages[1:] if message.user_id == actor.id
+
+        # Safety check: if no messages exist, return empty list
+        if not messages or len(messages) == 0:
+            return []
+
+        # Keep system messages and messages belonging to the current actor
+        # System messages should always be preserved regardless of user_id (including None)
+        from mirix.schemas.enums import MessageRole
+        filtered_messages = [
+            message for message in messages
+            if message.role == MessageRole.system or (message.user_id is not None and message.user_id == actor.id)
         ]
-        return messages
+        return filtered_messages
 
     @enforce_types
     def get_system_message(self, agent_id: str, actor: PydanticUser) -> PydanticMessage:
@@ -809,7 +818,27 @@ class AgentManager:
         message_ids = (
             self.get_agent_by_id(agent_id=agent_id, actor=actor).message_ids or []
         )
-        message_ids += [m.id for m in messages]
+
+        # Separate new messages into system and non-system
+        from mirix.schemas.enums import MessageRole
+        new_message_ids = [m.id for m in messages]
+        new_system_message_ids = [m.id for m in messages if m.role == MessageRole.system]
+        new_non_system_message_ids = [m.id for m in messages if m.role != MessageRole.system]
+
+        # Separate existing messages into system and non-system
+        existing_messages = self.message_manager.get_messages_by_ids(
+            message_ids=message_ids, actor=actor
+        ) if message_ids else []
+        existing_system_message_ids = [msg.id for msg in existing_messages if msg.role == MessageRole.system]
+        existing_non_system_message_ids = [msg.id for msg in existing_messages if msg.role != MessageRole.system]
+
+        # CRITICAL: System messages first, then other messages
+        # New system messages replace old system messages (typically only one system message)
+        final_system_ids = new_system_message_ids if new_system_message_ids else existing_system_message_ids
+        final_non_system_ids = existing_non_system_message_ids + new_non_system_message_ids
+
+        message_ids = final_system_ids + final_non_system_ids
+
         return self.set_in_context_messages(
             agent_id=agent_id, message_ids=message_ids, actor=actor
         )
@@ -845,13 +874,17 @@ class AgentManager:
             current_messages = agent.messages
 
             # Filter out messages belonging to the specific actor, but keep:
-            # 1. System messages (role='system')
+            # 1. System messages (role='system') - ALWAYS KEEP
             # 2. Messages from other actors (user_id != actor.id)
             messages_to_keep = []
             messages_to_remove = []
 
             for message in current_messages:
-                if message.role == "system" or message.user_id == actor.id:
+                # Keep system messages and messages from other users
+                # Remove only messages belonging to the current actor (non-system)
+                if message.role == "system":
+                    messages_to_keep.append(message)
+                elif message.user_id == actor.id:
                     messages_to_remove.append(message)
                 else:
                     messages_to_keep.append(message)
@@ -860,8 +893,17 @@ class AgentManager:
             agent.messages = messages_to_keep
 
             # Update message_ids to reflect the remaining messages
-            # Keep the order based on created_at timestamp
-            agent.message_ids = [msg.id for msg in messages_to_keep]
+            # CRITICAL: Ensure system messages come first, then order by created_at
+            system_messages = [msg for msg in messages_to_keep if msg.role == "system"]
+            non_system_messages = [msg for msg in messages_to_keep if msg.role != "system"]
+
+            # Sort by created_at to maintain chronological order
+            system_messages.sort(key=lambda x: x.created_at)
+            non_system_messages.sort(key=lambda x: x.created_at)
+
+            # System messages first, then other messages
+            ordered_messages = system_messages + non_system_messages
+            agent.message_ids = [msg.id for msg in ordered_messages]
 
             # Commit the update
             agent.update(db_session=session, actor=actor)
@@ -873,21 +915,26 @@ class AgentManager:
                 actor, agent_state
             )
         else:
-            # We still want to always have a system message
-            init_messages = initialize_message_sequence(
-                agent_state=agent_state,
-                memory_edit_timestamp=get_utc_time(),
-                include_initial_boot_message=True,
-            )
-            system_message = PydanticMessage.dict_to_message(
-                agent_id=agent_state.id,
-                user_id=agent_state.created_by_id,
-                model=agent_state.llm_config.model,
-                openai_message_dict=init_messages[0],
-            )
-            return self.append_to_in_context_messages(
-                [system_message], agent_id=agent_state.id, actor=actor
-            )
+            # Check if we have a system message already
+            # If not, create one (this shouldn't happen but we handle it for safety)
+            if not agent_state.message_ids or len(agent_state.message_ids) == 0:
+                init_messages = initialize_message_sequence(
+                    agent_state=agent_state,
+                    memory_edit_timestamp=get_utc_time(),
+                    include_initial_boot_message=True,
+                )
+                system_message = PydanticMessage.dict_to_message(
+                    agent_id=agent_state.id,
+                    user_id=agent_state.created_by_id,
+                    model=agent_state.llm_config.model,
+                    openai_message_dict=init_messages[0],
+                )
+                return self.append_to_in_context_messages(
+                    [system_message], agent_id=agent_state.id, actor=actor
+                )
+
+            # System message already exists, just return the agent state
+            return agent_state
 
     # ======================================================================================================================
     # Block management

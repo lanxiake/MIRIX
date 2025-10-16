@@ -7,7 +7,7 @@ import queuedFetch from '../utils/requestQueue';
 import './ChatWindow.css';
 import { useTranslation } from 'react-i18next';
 
-const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => {
+const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring, currentUser, onApiKeyRequired }) => {
   const [includeScreenshots, setIncludeScreenshots] = useState(true);
   const [currentModel, setCurrentModel] = useState(settings.model); // Track actual current model
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
@@ -363,7 +363,8 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
         message: messageText || null,
         image_uris: imageUris,
         memorizing: false,
-        is_screen_monitoring: isScreenMonitoring
+        is_screen_monitoring: isScreenMonitoring,
+        user_id: currentUser?.id || "user-00000000-0000-4000-8000-000000000000" // 使用当前用户ID，回退到默认用户ID
       };
 
       const result = await queuedFetch(`${settings.serverUrl}/send_streaming_message`, {
@@ -510,6 +511,9 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          user_id: currentUser?.id || "user-00000000-0000-4000-8000-000000000000"
+        })
       });
 
       if (!response.ok) {

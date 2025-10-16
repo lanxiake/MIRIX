@@ -1365,10 +1365,11 @@ const ExistingMemory = ({ settings, currentUser }) => {
       </div>
 
       {/* Upload & Export Modal */}
-      <UploadExportModal 
+      <UploadExportModal
         isOpen={showUploadExportModal}
         onClose={() => setShowUploadExportModal(false)}
         settings={settings}
+        currentUser={currentUser}
       />
 
       {/* Delete Confirmation Modal */}

@@ -1601,7 +1601,18 @@ These keywords have been used to retrieve relevant memories from the database.
             # Step 0: get in-context messages and get the raw system prompt
             in_context_messages = self.agent_manager.get_in_context_messages(agent_id=self.agent_state.id, actor=self.user)
 
-            assert in_context_messages[0].role == MessageRole.system
+            # Safety check: if no messages exist, initialize with default system message
+            if not in_context_messages or len(in_context_messages) == 0:
+                self.logger.warning("No in-context messages found, initializing with default system message")
+                # Initialize default message sequence
+                self.agent_state = self.agent_manager.append_initial_message_sequence_to_in_context_messages(
+                    actor=self.user,
+                    agent_state=self.agent_state
+                )
+                in_context_messages = self.agent_manager.get_in_context_messages(agent_id=self.agent_state.id, actor=self.user)
+
+            assert in_context_messages and len(in_context_messages) > 0, "Failed to initialize messages"
+            assert in_context_messages[0].role == MessageRole.system, f"First message should be system, got {in_context_messages[0].role}"
             raw_system = in_context_messages[0].content[0].text
 
             # Build the complete system prompt with memories

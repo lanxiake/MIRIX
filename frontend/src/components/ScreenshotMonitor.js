@@ -5,7 +5,7 @@ import queuedFetch from '../utils/requestQueue';
 import AppSelector from './AppSelector';
 import { useTranslation } from 'react-i18next';
 
-const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
+const ScreenshotMonitor = ({ settings, onMonitoringStatusChange, currentUser }) => {
   const { t } = useTranslation();
   
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -183,7 +183,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
         image_uris: imagePaths,
         sources: sources, // New sources parameter
         memorizing: true,
-        is_screen_monitoring: true
+        is_screen_monitoring: true,
+        user_id: currentUser?.id || "user-00000000-0000-4000-8000-000000000000"
       };
 
       // Use a fresh abort controller for this request
