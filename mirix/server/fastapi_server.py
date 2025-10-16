@@ -3145,9 +3145,21 @@ async def upload_document(request: UploadDocumentRequest):
         
         # 提取文本内容
         text_content = document_processor.extract_text_content(processed_doc)
-        
-        # 获取当前用户 - 文档必须归属于当前用户,确保数据隔离
-        current_user = agent.client.server.user_manager.get_user_by_id(agent.client.user_id)
+
+        # 获取当前用户 - 如果请求中指定了user_id则使用该用户,否则使用当前活跃用户
+        current_user = None
+        if request.user_id:
+            try:
+                current_user = agent.client.server.user_manager.get_user_by_id(request.user_id)
+            except Exception:
+                logger.warning(f"指定的用户 {request.user_id} 不存在，使用活跃用户")
+
+        # 如果没有指定用户或指定的用户不存在，使用当前活跃用户
+        if not current_user:
+            users = agent.client.server.user_manager.list_users()
+            active_user = next((user for user in users if user.status == "active"), None)
+            current_user = active_user if active_user else None
+
         if not current_user:
             raise HTTPException(status_code=500, detail="无法获取当前用户信息")
         
