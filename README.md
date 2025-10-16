@@ -51,7 +51,8 @@ For more details, please refer to [Backend Usage](https://docs.mirix.io/user-gui
 
 We've created a simple [Python SDK](https://pypi.org/project/mirix/0.1.5/) that makes it incredibly easy to integrate Mirix's memory capabilities into your applications:
 
-### Installationhttps://pypi.org/project/mirix/0.1.5/
+### Installation
+https://pypi.org/project/mirix/0.1.5
 ```bash
 pip install mirix
 ```
