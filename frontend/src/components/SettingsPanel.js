@@ -43,6 +43,8 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   const [showDeleteUserConfirm, setShowDeleteUserConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSettingsMessage, setSaveSettingsMessage] = useState('');
 
   // Debug logging for settings
   useEffect(() => {
@@ -594,6 +596,50 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     setShowDeleteUserConfirm(false);
     setUserToDelete(null);
   }, []);
+
+  // Save all settings to backend database
+  const handleSaveAllSettings = useCallback(async () => {
+    if (!currentUser || !settings.serverUrl) {
+      setSaveSettingsMessage('❌ No user selected or server not available');
+      setTimeout(() => setSaveSettingsMessage(''), 3000);
+      return;
+    }
+
+    setIsSavingSettings(true);
+    setSaveSettingsMessage('💾 Saving all settings...');
+
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/settings/users/${currentUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_model: settings.model,
+          memory_model: settings.memoryModel,
+          timezone: settings.timezone,
+          persona: settings.persona,
+          persona_text: selectedPersonaText,
+          ui_preferences: settings.uiPreferences || {},
+          custom_settings: settings.customSettings || {}
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Settings saved successfully:', data);
+        setSaveSettingsMessage('✅ Settings saved successfully!');
+      } else {
+        const errorData = await response.text();
+        console.error('Failed to save settings:', errorData);
+        setSaveSettingsMessage('❌ Failed to save settings');
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setSaveSettingsMessage('❌ Error saving settings');
+    } finally {
+      setIsSavingSettings(false);
+      setTimeout(() => setSaveSettingsMessage(''), 3000);
+    }
+  }, [currentUser, settings, selectedPersonaText]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1178,9 +1224,92 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       </div>
 
       <div className="settings-content">
+        {/* User Selection Section - Moved to top */}
+        <div className="settings-section">
+          <h3>👥 {t('settings.userSelection.title')}</h3>
+
+          <div className="setting-item">
+            <label htmlFor="user-selector">{t('settings.userSelection.currentUser')}</label>
+            <div className="user-selector-container">
+              <div className="user-selector-with-add">
+                <div
+                  className={`user-selector-dropdown ${isUserDropdownOpen ? 'open' : ''}`}
+                  onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                >
+                  <div className="user-selector-current">
+                    {isLoadingUsers ? (
+                      <span className="loading-text">🔄 {t('settings.userSelection.loadingUsers')}</span>
+                    ) : currentUser ? (
+                      <span className="current-user-display">
+                        {currentUser.name}
+                      </span>
+                    ) : (
+                      <span className="no-user-selected">{t('settings.userSelection.noUserSelected')}</span>
+                    )}
+                    <span className={`dropdown-arrow ${isUserDropdownOpen ? 'up' : 'down'}`}>
+                      {isUserDropdownOpen ? '▲' : '▼'}
+                    </span>
+                  </div>
+
+                  {isUserDropdownOpen && !isLoadingUsers && (
+                    <div className="user-dropdown-list">
+                      {users.length > 0 ? (
+                        users.map(user => (
+                          <div
+                            key={user.id}
+                            className={`user-dropdown-item ${currentUser?.id === user.id ? 'selected' : ''}`}
+                          >
+                            <div
+                              className="user-dropdown-info"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUserSelection(user);
+                              }}
+                            >
+                              <span className="user-dropdown-name">{user.name}</span>
+                              {currentUser?.id === user.id && (
+                                <span className="selected-indicator">✓</span>
+                              )}
+                            </div>
+                            <button
+                              className="delete-user-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteUser(user);
+                              }}
+                              title={t('settings.userSelection.deleteUser')}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="no-users-dropdown">{t('settings.userSelection.noUsersAvailable')}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="add-user-button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAddUserModal(true);
+                  }}
+                  title={t('settings.userSelection.addUserTooltip')}
+                >
+                  + {t('settings.userSelection.addUser')}
+                </button>
+              </div>
+            </div>
+            <span className="setting-description">
+              {t('settings.userSelection.description')}
+            </span>
+          </div>
+        </div>
+
         <div className="settings-section">
           <h3>{t('settings.sections.model')}</h3>
-          
+
           <div className="setting-item">
             <label htmlFor="model-select">{t('settings.chatModel')}</label>
             <div className="model-select-container">
@@ -1583,84 +1712,23 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
           </div>
         </div>
 
-        <div className="settings-section">
-          <h3>👥 {t('settings.userSelection.title')}</h3>
-          
-          <div className="setting-item">
-            <label htmlFor="user-selector">{t('settings.userSelection.currentUser')}</label>
-            <div className="user-selector-container">
-              <div className="user-selector-with-add">
-                <div 
-                  className={`user-selector-dropdown ${isUserDropdownOpen ? 'open' : ''}`}
-                  onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                >
-                  <div className="user-selector-current">
-                    {isLoadingUsers ? (
-                      <span className="loading-text">🔄 {t('settings.userSelection.loadingUsers')}</span>
-                    ) : currentUser ? (
-                      <span className="current-user-display">
-                        {currentUser.name}
-                      </span>
-                    ) : (
-                      <span className="no-user-selected">{t('settings.userSelection.noUserSelected')}</span>
-                    )}
-                    <span className={`dropdown-arrow ${isUserDropdownOpen ? 'up' : 'down'}`}>
-                      {isUserDropdownOpen ? '▲' : '▼'}
-                    </span>
-                  </div>
-                  
-                  {isUserDropdownOpen && !isLoadingUsers && (
-                    <div className="user-dropdown-list">
-                      {users.length > 0 ? (
-                        users.map(user => (
-                          <div
-                            key={user.id}
-                            className={`user-dropdown-item ${currentUser?.id === user.id ? 'selected' : ''}`}
-                          >
-                            <div
-                              className="user-dropdown-info"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUserSelection(user);
-                              }}
-                            >
-                              <span className="user-dropdown-name">{user.name}</span>
-                              {currentUser?.id === user.id && (
-                                <span className="selected-indicator">✓</span>
-                              )}
-                            </div>
-                            <button
-                              className="delete-user-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteUser(user);
-                              }}
-                              title={t('settings.userSelection.deleteUser')}
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="no-users-dropdown">{t('settings.userSelection.noUsersAvailable')}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <button
-                  className="add-user-button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowAddUserModal(true);
-                  }}
-                  title={t('settings.userSelection.addUserTooltip')}
-                >
-                  + {t('settings.userSelection.addUser')}
-                </button>
-              </div>
-            </div>
+        {/* Save All Settings Section */}
+        <div className="settings-section save-settings-section">
+          <div className="save-settings-container">
+            <button
+              onClick={handleSaveAllSettings}
+              disabled={isSavingSettings || !currentUser}
+              className="save-all-settings-btn"
+            >
+              {isSavingSettings ? '💾 Saving...' : '💾 Save All Settings'}
+            </button>
+            {saveSettingsMessage && (
+              <span className={`update-message ${saveSettingsMessage.includes('✅') ? 'success' : saveSettingsMessage.includes('Saving') ? 'info' : 'error'}`}>
+                {saveSettingsMessage}
+              </span>
+            )}
             <span className="setting-description">
-              {t('settings.userSelection.description')}
+              Save all current settings (models, timezone, persona) and associate them with the current user
             </span>
           </div>
         </div>
