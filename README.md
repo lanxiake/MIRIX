@@ -230,9 +230,5 @@ We host weekly discussion sessions where you can:
 <strong>WeChat Group</strong>
 </div>
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Mirix-AI/MIRIX&type=Date)](https://star-history.com/#Mirix-AI/MIRIX.&Date)
-
 ## Acknowledgement
 We would like to thank [Letta](https://github.com/letta-ai/letta) for open-sourcing their framework, which served as the foundation for the memory system in this project.
