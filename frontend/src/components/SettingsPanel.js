@@ -613,13 +613,16 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_model: settings.model,
-          memory_model: settings.memoryModel,
-          timezone: settings.timezone,
-          persona: settings.persona,
-          persona_text: selectedPersonaText,
-          ui_preferences: settings.uiPreferences || {},
-          custom_settings: settings.customSettings || {}
+          user_id: currentUser.id,
+          settings: {
+            chat_model: settings.model,
+            memory_model: settings.memoryModel,
+            timezone: settings.timezone,
+            persona: settings.persona,
+            persona_text: selectedPersonaText,
+            ui_preferences: settings.uiPreferences || {},
+            custom_settings: settings.customSettings || {}
+          }
         })
       });
 
