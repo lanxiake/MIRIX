@@ -31,7 +31,9 @@ class UserMixin(Base):
 
     __abstract__ = True
 
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"))
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE")
+    )
 
 
 class AgentMixin(Base):

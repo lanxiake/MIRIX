@@ -88,9 +88,123 @@ function App() {
     }
   }, [settings.model, settings.serverUrl]);
 
+  // Load user settings from backend
+  const loadUserSettings = useCallback(async (userId) => {
+    if (!settings.serverUrl || !userId) {
+      console.log('loadUserSettings: serverUrl or userId not available');
+      return;
+    }
+
+    try {
+      console.log(`Loading settings for user: ${userId}`);
+      const response = await queuedFetch(`${settings.serverUrl}/settings/users/${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('User settings loaded:', data);
+        if (data.success && data.settings) {
+          // Update settings with user-specific values, but keep serverUrl
+          setSettings(prev => ({
+            ...prev,
+            model: data.settings.chat_model || prev.model,
+            memoryModel: data.settings.memory_model || prev.memoryModel,
+            timezone: data.settings.timezone || prev.timezone,
+            persona: data.settings.persona || prev.persona,
+            // Keep UI preferences if they exist
+            uiPreferences: data.settings.ui_preferences || prev.uiPreferences
+          }));
+          console.log(`User settings loaded for: ${userId}`);
+        }
+      } else {
+        console.error('Failed to load user settings:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error loading user settings:', error);
+    }
+  }, [settings.serverUrl]);
+
+  // Save user settings to backend
+  const saveUserSettings = useCallback(async (userId, settingsToSave) => {
+    if (!settings.serverUrl || !userId) {
+      console.log('saveUserSettings: serverUrl or userId not available');
+      return;
+    }
+
+    try {
+      console.log(`Saving settings for user: ${userId}`, settingsToSave);
+      const response = await queuedFetch(`${settings.serverUrl}/settings/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          settings: {
+            chat_model: settingsToSave.model,
+            memory_model: settingsToSave.memoryModel,
+            timezone: settingsToSave.timezone,
+            persona: settingsToSave.persona,
+            ui_preferences: settingsToSave.uiPreferences || {}
+          }
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('User settings saved:', data);
+        return data.success;
+      } else {
+        console.error('Failed to save user settings:', response.statusText);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error saving user settings:', error);
+      return false;
+    }
+  }, [settings.serverUrl]);
+
+  // Fetch current user from backend
+  const fetchCurrentUser = useCallback(async () => {
+    if (!settings.serverUrl) {
+      console.log('fetchCurrentUser: serverUrl not available yet');
+      return;
+    }
+
+    try {
+      console.log('Fetching current user from backend...');
+      const response = await queuedFetch(`${settings.serverUrl}/users/current`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Current user data:', data);
+        if (data.user) {
+          setCurrentUser(data.user);
+          console.log(`Current user set to: ${data.user.name} (${data.user.id})`);
+          // Load user settings after setting current user
+          await loadUserSettings(data.user.id);
+        }
+      } else {
+        console.error('Failed to fetch current user:', response.statusText);
+        // 如果获取失败，使用默认用户ID
+        setCurrentUser({
+          id: "user-00000000-0000-4000-8000-000000000000",
+          name: "default_user"
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+      // 如果获取失败，使用默认用户ID
+      setCurrentUser({
+        id: "user-00000000-0000-4000-8000-000000000000",
+        name: "default_user"
+      });
+    }
+  }, [settings.serverUrl, loadUserSettings]);
+
   // Refresh backend-dependent data after successful connection
   const refreshBackendData = useCallback(async () => {
     console.log('🔄 Refreshing backend-dependent data...');
+    
+    // Fetch current user first
+    await fetchCurrentUser();
     
     // Check API keys after successful backend connection
     await checkApiKeys();
@@ -98,7 +212,7 @@ function App() {
     // Trigger refresh of other backend-dependent components
     // This will cause components like SettingsPanel to re-fetch their data
     setSettings(prev => ({ ...prev, lastBackendRefresh: Date.now() }));
-  }, [checkApiKeys]);
+  }, [checkApiKeys, fetchCurrentUser]);
 
   // Check backend health
   const checkBackendHealth = useCallback(async () => {
@@ -337,9 +451,35 @@ function App() {
     };
   }, [checkBackendHealth]);
 
-  const handleSettingsChange = (newSettings) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+  const handleSettingsChange = async (newSettings) => {
+    // Update local state first
+    const updatedSettings = { ...settings, ...newSettings };
+    setSettings(updatedSettings);
+
+    // Save to backend if user is available
+    if (currentUser && currentUser.id) {
+      try {
+        const success = await saveUserSettings(currentUser.id, updatedSettings);
+        if (success) {
+          console.log('Settings saved successfully for user:', currentUser.id);
+        } else {
+          console.error('Failed to save settings for user:', currentUser.id);
+        }
+      } catch (error) {
+        console.error('Error saving settings:', error);
+      }
+    }
   };
+
+  // Handle user switching with settings loading
+  const handleUserSwitch = useCallback(async (newUser) => {
+    setCurrentUser(newUser);
+
+    // Load settings for the new user
+    if (newUser && newUser.id) {
+      await loadUserSettings(newUser.id);
+    }
+  }, [loadUserSettings]);
 
 
 
@@ -408,6 +548,7 @@ function App() {
           <ScreenshotMonitor 
             settings={settings} 
             onMonitoringStatusChange={setIsScreenMonitoring}
+            currentUser={currentUser}
           />
         </div>
         {activeTab === 'memory' && (
@@ -422,7 +563,7 @@ function App() {
             onSettingsChange={handleSettingsChange}
             onApiKeyCheck={checkApiKeys}
             currentUser={currentUser}
-            onCurrentUserChange={setCurrentUser}
+            onCurrentUserChange={handleUserSwitch}
             onApiKeyRequired={(missingKeys, modelType, pendingModel, changeType, retryFunction) => {
               setApiKeyModal({
                 isOpen: true,

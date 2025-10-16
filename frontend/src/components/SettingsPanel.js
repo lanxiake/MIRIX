@@ -295,13 +295,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         const usersList = data.users || [];
         setUsers(usersList);
 
-        // Set current user (find user with active status)
+        // Only set current user if not already set
+        // This prevents循环 by not calling onCurrentUserChange on every fetch
         const activeUser = usersList.find(user => user.status === 'active');
-        if (activeUser) {
+        if (activeUser && (!currentUser || currentUser.id !== activeUser.id)) {
           onCurrentUserChange(activeUser);
-        } else if (!currentUser && usersList.length > 0) {
-          // Fallback: if no active user found, use first user
-          onCurrentUserChange(usersList[0]);
         }
       } else {
         console.error('Failed to fetch users');
@@ -311,7 +309,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [settings.serverUrl, currentUser, onCurrentUserChange]);
+  }, [settings.serverUrl]);
 
   const searchMcpMarketplace = useCallback(async (query = '') => {
     if (!settings.serverUrl) {
@@ -688,7 +686,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchMcpMarketplace();
       fetchUsers();
     }
-  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers]);
+  // Only run when serverUrl changes, not when the fetch functions change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.serverUrl]);
 
   // Fetch current models and timezone whenever settings panel becomes visible
   useEffect(() => {
@@ -699,11 +699,13 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentTimezone();
       fetchCustomModels();
       fetchMcpMarketplace();
-      fetchUsers();
+      // Don't fetch users again on visibility change to avoid循环
       // Also refresh MCP status to ensure connections are shown correctly
       refreshMcpStatus();
     }
-  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers, refreshMcpStatus]);
+  // Only run when visibility or serverUrl changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVisible, settings.serverUrl]);
 
   // Refresh all backend data when backend reconnects
   useEffect(() => {
@@ -718,7 +720,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchMcpMarketplace();
       fetchUsers();
     }
-  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers]);
+  // Only run when backend refresh timestamp or serverUrl changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.lastBackendRefresh, settings.serverUrl]);
 
   // Handle MCP search and filtering
   useEffect(() => {

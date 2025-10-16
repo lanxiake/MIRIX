@@ -110,9 +110,50 @@ class UserManager:
 
     @enforce_types
     def delete_user_by_id(self, user_id: str):
-        """Delete a user and their associated records (agents, sources, mappings)."""
+        """Delete a user and their associated records.
+
+        级联删除所有用户相关的数据，包括:
+        - 情景记忆 (episodic_memory)
+        - 语义记忆 (semantic_memory)
+        - 程序记忆 (procedural_memory)
+        - 资源记忆 (resource_memory)
+        - 知识库 (knowledge_vault)
+        - 消息 (messages)
+
+        注意：Agent属于组织级别资源，不会被删除
+        """
+        from mirix.orm.episodic_memory import EpisodicEvent
+        from mirix.orm.semantic_memory import SemanticMemoryItem
+        from mirix.orm.procedural_memory import ProceduralMemoryItem
+        from mirix.orm.resource_memory import ResourceMemoryItem
+        from mirix.orm.knowledge_vault import KnowledgeVaultItem
+        from mirix.orm.message import Message
+
         with self.session_maker() as session:
-            # Delete from user table
+            # 先删除所有关联的记忆数据（按依赖关系顺序删除）
+
+            # 1. 删除情景记忆
+            session.query(EpisodicEvent).filter(EpisodicEvent.user_id == user_id).delete(synchronize_session=False)
+
+            # 2. 删除语义记忆
+            session.query(SemanticMemoryItem).filter(SemanticMemoryItem.user_id == user_id).delete(synchronize_session=False)
+
+            # 3. 删除程序记忆
+            session.query(ProceduralMemoryItem).filter(ProceduralMemoryItem.user_id == user_id).delete(synchronize_session=False)
+
+            # 4. 删除资源记忆
+            session.query(ResourceMemoryItem).filter(ResourceMemoryItem.user_id == user_id).delete(synchronize_session=False)
+
+            # 5. 删除知识库
+            session.query(KnowledgeVaultItem).filter(KnowledgeVaultItem.user_id == user_id).delete(synchronize_session=False)
+
+            # 6. 删除消息
+            session.query(Message).filter(Message.user_id == user_id).delete(synchronize_session=False)
+
+            # 注意：不删除Agent，因为Agent属于组织级别资源，不直接关联用户
+            # Agent使用OrganizationMixin而非UserMixin，没有user_id字段
+
+            # 7. 最后删除用户本身
             user = UserModel.read(db_session=session, identifier=user_id)
             user.hard_delete(session)
 

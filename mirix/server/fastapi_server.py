@@ -28,6 +28,12 @@ from ..schemas.custom_models import (
     get_model_id_from_name,
     validate_custom_models_directory
 )
+from ..schemas.user_settings import (
+    GetUserSettingsResponse,
+    UpdateUserSettingsRequest,
+    UpdateUserSettingsResponse,
+    UserSettingsResponse
+)
 
 logger = logging.getLogger(__name__)
 
@@ -849,12 +855,22 @@ async def send_streaming_message_endpoint(request: MessageRequest):
 
             async def run_agent():
                 try:
-                    # find the current active user
-                    users = agent.client.server.user_manager.list_users()
-                    active_user = next(
-                        (user for user in users if user.status == "active"), None
-                    )
-                    current_user_id = active_user.id if active_user else None
+                    # Get user from request or find the current active user
+                    target_user = None
+                    if request.user_id:
+                        try:
+                            target_user = agent.client.server.user_manager.get_user_by_id(request.user_id)
+                        except Exception:
+                            logger.warning(f"指定的用户 {request.user_id} 不存在，使用活跃用户")
+                    
+                    if not target_user:
+                        users = agent.client.server.user_manager.list_users()
+                        active_user = next(
+                            (user for user in users if user.status == "active"), None
+                        )
+                        target_user = active_user if active_user else None
+                    
+                    current_user_id = target_user.id if target_user else None
 
                     # Run agent.send_message in a background thread to avoid blocking
                     loop = asyncio.get_event_loop()
@@ -2372,17 +2388,29 @@ async def update_memory(memory_type: str, memory_id: str, request: UpdateMemoryR
         raise HTTPException(status_code=500, detail=f"更新记忆时发生错误: {str(e)}")
 
 
+class ClearConversationRequest(BaseModel):
+    user_id: Optional[str] = Field(None, description="用户ID，可选")
+
+
 @app.post("/conversation/clear", response_model=ClearConversationResponse)
-async def clear_conversation_history():
+async def clear_conversation_history(request: ClearConversationRequest = None):
     """Permanently clear all conversation history for the current agent (memories are preserved)"""
     try:
         if agent is None:
             raise HTTPException(status_code=400, detail="Agent not initialized")
 
-        # Find the current active user
-        users = agent.client.server.user_manager.list_users()
-        active_user = next((user for user in users if user.status == "active"), None)
-        target_user = active_user if active_user else (users[0] if users else None)
+        # Get user from request or find current active user
+        target_user = None
+        if request and request.user_id:
+            try:
+                target_user = agent.client.server.user_manager.get_user_by_id(request.user_id)
+            except Exception:
+                logger.warning(f"指定的用户 {request.user_id} 不存在，使用活跃用户")
+        
+        if not target_user:
+            users = agent.client.server.user_manager.list_users()
+            active_user = next((user for user in users if user.status == "active"), None)
+            target_user = active_user if active_user else (users[0] if users else None)
 
         # Get current message count for this specific actor for reporting
         current_messages = agent.client.server.agent_manager.get_in_context_messages(
@@ -2794,6 +2822,26 @@ async def respond_to_confirmation(request: ConfirmationRequest):
         return {"success": False, "message": "Confirmation ID not found or expired"}
 
 
+@app.get("/users/current")
+async def get_current_user():
+    """Get the current active user"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == "active"), None)
+        
+        if not active_user:
+            # If no active user, return the default user
+            default_user = agent.client.server.user_manager.get_default_user()
+            return {"user": default_user.model_dump()}
+        
+        return {"user": active_user.model_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving current user: {str(e)}")
+
+
 @app.get("/users")
 async def get_all_users():
     """Get all users in the system"""
@@ -2820,26 +2868,38 @@ class SwitchUserResponse(BaseModel):
 @app.post("/users/switch", response_model=SwitchUserResponse)
 async def switch_user(request: SwitchUserRequest):
     """
-    Switch the active user (DISABLED FOR SECURITY)
-    
-    This endpoint is disabled for security reasons to prevent unauthorized 
-    access to other users' data. Please contact administrator if you need 
-    this feature.
+    Switch the active user
+
+    Changes the currently active user for the agent.
     """
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
-    # 记录切换尝试并拒绝
-    logger.warning(
-        f"User switch attempt blocked: target_user_id={request.user_id}. "
-        f"This feature is disabled for security reasons."
-    )
-    
-    raise HTTPException(
-        status_code=403,
-        detail="User switching is disabled for security reasons. "
-               "Please contact administrator if you need this feature."
-    )
+    try:
+        # Switch user context
+        user = switch_user_context(agent, request.user_id)
+
+        if user:
+            logger.info(f"Successfully switched to user: {request.user_id} ({user.name})")
+            return SwitchUserResponse(
+                success=True,
+                message=f"Successfully switched to user {user.name}",
+                user=user.model_dump()
+            )
+        else:
+            logger.error(f"Failed to switch to user: {request.user_id}")
+            return SwitchUserResponse(
+                success=False,
+                message=f"Failed to switch to user {request.user_id}",
+                user=None
+            )
+    except Exception as e:
+        logger.error(f"Error switching user: {str(e)}")
+        return SwitchUserResponse(
+            success=False,
+            message=f"Error switching user: {str(e)}",
+            user=None
+        )
 
 
 class CreateUserRequest(BaseModel):
@@ -2955,6 +3015,74 @@ async def delete_user(user_id: str):
         return DeleteUserResponse(
             success=False,
             message=f"删除用户时发生错误: {str(e)}"
+        )
+
+
+@app.get("/settings/users/{user_id}", response_model=GetUserSettingsResponse)
+async def get_user_settings(user_id: str):
+    """获取用户的个性化设置"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        # 获取用户设置管理器
+        from mirix.services.user_settings_manager import UserSettingsManager
+        settings_manager = UserSettingsManager()
+
+        # 获取或创建用户设置
+        settings = settings_manager.get_or_create_user_settings(user_id)
+
+        return GetUserSettingsResponse(
+            success=True,
+            settings=settings,
+            message="获取用户设置成功"
+        )
+    except Exception as e:
+        logger.error(f"获取用户设置失败: {str(e)}")
+        return GetUserSettingsResponse(
+            success=False,
+            settings=None,
+            message=f"获取用户设置失败: {str(e)}"
+        )
+
+
+@app.put("/settings/users/{user_id}", response_model=UpdateUserSettingsResponse)
+async def update_user_settings(user_id: str, request: UpdateUserSettingsRequest):
+    """更新用户的个性化设置"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+
+    try:
+        # 验证请求中的user_id与路径中的user_id一致
+        if request.user_id != user_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"请求体中的user_id ({request.user_id}) 与路径中的user_id ({user_id}) 不匹配"
+            )
+
+        # 获取用户设置管理器
+        from mirix.services.user_settings_manager import UserSettingsManager
+        settings_manager = UserSettingsManager()
+
+        # 更新用户设置
+        updated_settings = settings_manager.update_user_settings(
+            user_id=user_id,
+            updates=request.settings
+        )
+
+        return UpdateUserSettingsResponse(
+            success=True,
+            settings=updated_settings,
+            message="更新用户设置成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新用户设置失败: {str(e)}")
+        return UpdateUserSettingsResponse(
+            success=False,
+            settings=None,
+            message=f"更新用户设置失败: {str(e)}"
         )
 
 

@@ -21,3 +21,4 @@ from mirix.orm.step import Step
 from mirix.orm.tool import Tool
 from mirix.orm.tools_agents import ToolsAgents
 from mirix.orm.user import User
+from mirix.orm.user_settings import UserSettings
