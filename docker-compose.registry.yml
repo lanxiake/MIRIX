@@ -1,0 +1,194 @@
+version: '3.8'
+
+# ============================================================================
+# MIRIX Docker Compose - 私有仓库镜像部署配置
+# ============================================================================
+# 说明:
+#   - 从私有 Docker 仓库拉取预构建的 MIRIX 镜像
+#   - 适用于生产环境部署
+#   - 需要先使用 build_and_push_images.sh 构建并推送镜像
+# ============================================================================
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mirix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mirix
+      POSTGRES_USER: mirix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mirix123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mirix -d mirix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mirix-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: mirix-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mirix-network
+
+  # MIRIX 后端服务 (从私有仓库拉取)
+  mirix-backend:
+    image: ${DOCKER_REGISTRY:-10.157.152.192:10443}/${NAMESPACE:-mirix}/backend:${VERSION:-latest}
+    container_name: mirix-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 数据库配置
+      MIRIX_PG_URI: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
+      DATABASE_URL: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
+
+      # Redis 配置
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+
+      # 服务配置
+      HOST: 0.0.0.0
+      PORT: 47283
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # LLM API Keys (从环境变量或 .env 文件读取)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+
+      # 其他配置
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./mirix/configs:/app/mirix/configs:ro
+      - backend_logs:/app/logs
+      - user_data:/app/user_data
+    ports:
+      - "47283:47283"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:47283/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mirix-network
+
+  # MCP SSE 服务 (从私有仓库拉取)
+  mirix-mcp-sse:
+    image: ${DOCKER_REGISTRY:-10.157.152.192:10443}/${NAMESPACE:-mirix}/mcp-sse:${VERSION:-latest}
+    container_name: mirix-mcp-sse
+    restart: unless-stopped
+    depends_on:
+      mirix-backend:
+        condition: service_healthy
+    environment:
+      # 后端服务地址
+      BACKEND_URL: http://mirix-backend:47283
+
+      # 数据库配置 (MCP SSE 直接访问数据库)
+      MIRIX_PG_URI: postgresql://mirix:${POSTGRES_PASSWORD:-mirix123}@postgres:5432/mirix
+
+      # 服务配置
+      HOST: 0.0.0.0
+      PORT: 18002
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # LLM API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./mirix/configs:/app/mirix/configs:ro
+      - mcp_logs:/app/logs
+    ports:
+      - "18002:18002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - mirix-network
+
+  # MIRIX 前端 (从私有仓库拉取)
+  mirix-frontend:
+    image: ${DOCKER_REGISTRY:-10.157.152.192:10443}/${NAMESPACE:-mirix}/frontend:${VERSION:-latest}
+    container_name: mirix-frontend
+    restart: unless-stopped
+    depends_on:
+      mirix-backend:
+        condition: service_healthy
+      mirix-mcp-sse:
+        condition: service_healthy
+    environment:
+      # 后端服务地址 (容器内部访问使用内网地址，浏览器访问使用外网地址)
+      REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://10.157.152.40:47283}
+      REACT_APP_MCP_SSE_URL: ${REACT_APP_MCP_SSE_URL:-http://10.157.152.40:18002}
+
+      # Nginx 配置
+      NGINX_HOST: ${NGINX_HOST:-localhost}
+      NGINX_PORT: ${NGINX_PORT:-18001}
+    ports:
+      - "18001:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mirix-network
+
+# ============================================================================
+# 数据卷
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DATA_DIR:-./data}/postgres
+      o: bind
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+  mcp_logs:
+    driver: local
+  user_data:
+    driver: local
+
+# ============================================================================
+# 网络
+# ============================================================================
+networks:
+  mirix-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
