@@ -209,10 +209,19 @@ build_with_buildx() {
         push_flag="--push"
     fi
 
+    # 为前端构建添加环境变量参数
+    local build_args=""
+    if [ "$component_name" = "frontend" ]; then
+        build_args="--build-arg REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:47283}"
+        build_args="$build_args --build-arg REACT_APP_MCP_SSE_URL=${REACT_APP_MCP_SSE_URL:-http://localhost:18002}"
+        log_info "前端构建参数: REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:47283}"
+    fi
+
     if docker buildx build \
         --platform "$platforms" \
         --tag "$image_tag" \
         --file "$dockerfile_path" \
+        $build_args \
         $push_flag \
         "$build_context"; then
         log_success "镜像构建成功: $image_tag"
@@ -238,6 +247,14 @@ build_with_manual() {
 
     log_info "使用 manual 模式构建: $version_tag"
 
+    # 为前端构建添加环境变量参数
+    local build_args=""
+    if [ "$component_name" = "frontend" ]; then
+        build_args="--build-arg REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:47283}"
+        build_args="$build_args --build-arg REACT_APP_MCP_SSE_URL=${REACT_APP_MCP_SSE_URL:-http://localhost:18002}"
+        log_info "前端构建参数: REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:47283}"
+    fi
+
     local arch_tags=()
     local build_success=true
 
@@ -252,6 +269,7 @@ build_with_manual() {
             --platform "$platform" \
             --tag "$arch_tag" \
             --file "$dockerfile_path" \
+            $build_args \
             "$build_context"; then
 
             log_success "$arch 架构构建成功"

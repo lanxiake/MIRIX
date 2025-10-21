@@ -22,22 +22,68 @@ SET row_security = off;
 -- ============================================================================
 
 -- UUID 生成扩展
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
-COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
+DO $$ 
+BEGIN
+    -- 尝试创建扩展
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'uuid-ossp') THEN
+        CREATE EXTENSION "uuid-ossp" WITH SCHEMA public;
+        RAISE NOTICE 'Extension uuid-ossp created successfully';
+    ELSE
+        RAISE NOTICE 'Extension uuid-ossp already exists, skipping';
+    END IF;
+EXCEPTION 
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Extension uuid-ossp: % (may already exist in system)', SQLERRM;
+END $$;
+
+-- 为扩展添加注释（如果存在）
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'uuid-ossp') THEN
+        COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
+    END IF;
+END $$;
 
 -- 向量数据类型扩展 (用于embedding存储)
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
+DO $$ 
+BEGIN
+    -- 尝试创建扩展
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        CREATE EXTENSION vector WITH SCHEMA public;
+        RAISE NOTICE 'Extension vector created successfully';
+    ELSE
+        RAISE NOTICE 'Extension vector already exists, skipping';
+    END IF;
+EXCEPTION 
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Extension vector: % (may already exist in system)', SQLERRM;
+END $$;
+
+-- 为扩展添加注释（如果存在）
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
+    END IF;
+END $$;
 
 -- ============================================================================
 -- 自定义类型 (Custom Types)
 -- ============================================================================
 
 -- 沙箱类型枚举
-CREATE TYPE public.sandboxtype AS ENUM (
-    'E2B',
-    'LOCAL'
-);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sandboxtype') THEN
+        CREATE TYPE public.sandboxtype AS ENUM (
+            'E2B',
+            'LOCAL'
+        );
+        RAISE NOTICE 'Type sandboxtype created successfully';
+    ELSE
+        RAISE NOTICE 'Type sandboxtype already exists, skipping';
+    END IF;
+END $$;
 
 -- ============================================================================
 -- 表结构 (Tables)
@@ -51,6 +97,8 @@ CREATE TYPE public.sandboxtype AS ENUM (
 CREATE TABLE IF NOT EXISTS public.users (
     id character varying NOT NULL PRIMARY KEY,
     name character varying,
+    status character varying,
+    timezone character varying,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     is_deleted boolean DEFAULT false NOT NULL,
@@ -475,48 +523,128 @@ COMMENT ON TABLE public.blocks_agents IS 'Block 和 Agent 多对多关联';
 -- ============================================================================
 
 -- 用户索引
-CREATE INDEX IF NOT EXISTS idx_users_organization_id ON public.users(organization_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users(created_at) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_users_organization_id ON public.users(organization_id) WHERE NOT is_deleted;
+    CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users(created_at) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Users indexes: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- Agent 索引
-CREATE INDEX IF NOT EXISTS idx_agents_organization_id ON public.agents(organization_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_agents_type ON public.agents(agent_type) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_agents_organization_id ON public.agents(organization_id) WHERE NOT is_deleted;
+    CREATE INDEX IF NOT EXISTS idx_agents_type ON public.agents(agent_type) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Agents indexes: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- 消息索引
-CREATE INDEX IF NOT EXISTS idx_messages_user_id ON public.messages(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_messages_agent_id ON public.messages(agent_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages(created_at) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_messages_user_id ON public.messages(user_id) WHERE NOT is_deleted;
+    CREATE INDEX IF NOT EXISTS idx_messages_agent_id ON public.messages(agent_id) WHERE NOT is_deleted;
+    CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages(created_at) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Messages indexes: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- Memory 表索引（包含向量索引）
-CREATE INDEX IF NOT EXISTS idx_episodic_user_id ON public.episodic_memory(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_episodic_event_type ON public.episodic_memory(event_type) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_episodic_user_id ON public.episodic_memory(user_id) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Episodic memory user_id index: % (may not exist or already created)', SQLERRM;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_semantic_user_id ON public.semantic_memory(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_semantic_category ON public.semantic_memory(category) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_episodic_event_type ON public.episodic_memory(event_type) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Episodic memory event_type index: % (may not exist or already created)', SQLERRM;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_procedural_user_id ON public.procedural_memory(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_procedural_category ON public.procedural_memory(category) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_semantic_user_id ON public.semantic_memory(user_id) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Semantic memory user_id index: % (may not exist or already created)', SQLERRM;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_resource_user_id ON public.resource_memory(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_resource_type ON public.resource_memory(resource_type) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_semantic_category ON public.semantic_memory(category) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Semantic memory category index: % (may not exist or already created)', SQLERRM;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_knowledge_user_id ON public.knowledge_vault(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_knowledge_domain ON public.knowledge_vault(domain) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_procedural_user_id ON public.procedural_memory(user_id) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Procedural memory user_id index: % (may not exist or already created)', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_procedural_category ON public.procedural_memory(category) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Procedural memory category index: % (may not exist or already created)', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_resource_user_id ON public.resource_memory(user_id) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Resource memory user_id index: % (may not exist or already created)', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_resource_type ON public.resource_memory(resource_type) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Resource memory type index: % (may not exist or already created)', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_knowledge_user_id ON public.knowledge_vault(user_id) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Knowledge vault user_id index: % (may not exist or already created)', SQLERRM;
+END $$;
+
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_knowledge_domain ON public.knowledge_vault(domain) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Knowledge vault domain index: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- 文件索引
-CREATE INDEX IF NOT EXISTS idx_files_user_id ON public.files(user_id) WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_files_type ON public.files(file_type) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_files_user_id ON public.files(user_id) WHERE NOT is_deleted;
+    CREATE INDEX IF NOT EXISTS idx_files_type ON public.files(file_type) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Files indexes: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- 工具索引
-CREATE INDEX IF NOT EXISTS idx_tools_source_type ON public.tools(source_type) WHERE NOT is_deleted;
+DO $$
+BEGIN
+    CREATE INDEX IF NOT EXISTS idx_tools_source_type ON public.tools(source_type) WHERE NOT is_deleted;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'Tools indexes: % (may not exist or already created)', SQLERRM;
+END $$;
 
 -- ============================================================================
 -- 初始化数据 (Initial Data)
 -- ============================================================================
 
 -- 插入默认用户（如果不存在）
-INSERT INTO public.users (id, name, created_at, updated_at, is_deleted, organization_id)
-VALUES ('user-00000000-0000-4000-8000-000000000000', 'Default User', now(), now(), false, NULL)
+INSERT INTO public.users (id, name, status, timezone, created_at, updated_at, is_deleted, organization_id)
+VALUES ('user-00000000-0000-4000-8000-000000000000', 'Default User', 'active', 'UTC', now(), now(), false, NULL)
 ON CONFLICT (id) DO NOTHING;
 
 COMMENT ON TABLE public.users IS '用户表 - 包含默认用户';

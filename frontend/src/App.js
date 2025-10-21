@@ -18,7 +18,7 @@ function App() {
     model: 'gpt-4o-mini',
     persona: 'helpful_assistant',
     timezone: 'America/New_York',
-    serverUrl: 'http://10.157.152.40:47283'
+    serverUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:47283'
   });
 
   // Lift chat messages state to App level to persist across tab switches
