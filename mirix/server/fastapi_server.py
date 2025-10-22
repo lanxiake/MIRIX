@@ -88,13 +88,23 @@ def switch_user_context(agent_wrapper, user_id: str):
         user = agent_wrapper.client.server.user_manager.get_user_by_name(user_id)
 
         if user is None:
-            # If user doesn't exist, create it with username as user_id
+            # If user doesn't exist, create it with username
             logger.info(f"User with name '{user_id}' not found, creating new user")
-            user = agent_wrapper.client.server.user_manager.create_user(
-                user_id=user_id,  # Use username as both user_id and name
-                name=user_id
+
+            # Import User schema for user creation
+            from mirix.schemas.user import User
+            from mirix.services.organization_manager import OrganizationManager
+
+            # Create a new PydanticUser object
+            new_user = User(
+                name=user_id,
+                status="active",
+                timezone="UTC",  # Default timezone
+                organization_id=OrganizationManager.DEFAULT_ORG_ID
             )
-            logger.info(f"Created new user: {user_id}")
+
+            user = agent_wrapper.client.server.user_manager.create_user(new_user)
+            logger.info(f"Created new user: {user_id} (id={user.id})")
 
         # Update user status and switch context
         agent_wrapper.client.server.user_manager.update_user_status(user.id, "active")
