@@ -70,7 +70,11 @@ def validate_and_sanitize_user_id(
 
 # User context switching utilities
 def switch_user_context(agent_wrapper, user_id: str):
-    """Switch agent's user context and manage user status"""
+    """Switch agent's user context and manage user status
+
+    Args:
+        user_id: 用户账号名（username），而非数据库主键ID
+    """
     if agent_wrapper and agent_wrapper.client:
 
         # Set current user to inactive
@@ -80,9 +84,20 @@ def switch_user_context(agent_wrapper, user_id: str):
                 current_user.id, "inactive"
             )
 
-        # Get and set new user to active
-        user = agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
-        agent_wrapper.client.server.user_manager.update_user_status(user_id, "active")
+        # Get or create user by username (not database ID)
+        user = agent_wrapper.client.server.user_manager.get_user_by_name(user_id)
+
+        if user is None:
+            # If user doesn't exist, create it with username as user_id
+            logger.info(f"User with name '{user_id}' not found, creating new user")
+            user = agent_wrapper.client.server.user_manager.create_user(
+                user_id=user_id,  # Use username as both user_id and name
+                name=user_id
+            )
+            logger.info(f"Created new user: {user_id}")
+
+        # Update user status and switch context
+        agent_wrapper.client.server.user_manager.update_user_status(user.id, "active")
         agent_wrapper.client.user = user
         return user
     return None
