@@ -73,7 +73,7 @@ def switch_user_context(agent_wrapper, user_id: str):
     """Switch agent's user context and manage user status
 
     Args:
-        user_id: 用户账号名（username），而非数据库主键ID
+        user_id: 用户ID（可以是数据库UUID或用户名）
     """
     if agent_wrapper and agent_wrapper.client:
 
@@ -84,12 +84,20 @@ def switch_user_context(agent_wrapper, user_id: str):
                 current_user.id, "inactive"
             )
 
-        # Get or create user by username (not database ID)
-        user = agent_wrapper.client.server.user_manager.get_user_by_name(user_id)
+        # Try to get user by ID first (for frontend calls), then by name (for MCP calls)
+        user = None
+        try:
+            user = agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+            logger.debug(f"Found user by ID: {user_id}")
+        except Exception:
+            # If not found by ID, try by name (for MCP client compatibility)
+            user = agent_wrapper.client.server.user_manager.get_user_by_name(user_id)
+            if user:
+                logger.debug(f"Found user by name: {user_id}")
 
         if user is None:
-            # If user doesn't exist, create it with username
-            logger.info(f"User with name '{user_id}' not found, creating new user")
+            # If user doesn't exist, create it with the provided identifier as username
+            logger.info(f"User '{user_id}' not found, creating new user")
 
             # Import User schema for user creation
             from mirix.schemas.user import User
