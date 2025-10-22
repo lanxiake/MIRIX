@@ -487,8 +487,20 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         if (data.success) {
           onCurrentUserChange(selectedUser);
           console.log('Successfully switched to user:', data.user);
-          // Refresh users list to update status
-          await fetchUsers();
+
+          // Refresh all user-specific data
+          console.log('Refreshing all settings data for new user...');
+          await Promise.all([
+            fetchUsers(),                // Refresh users list to update status
+            fetchCurrentModel(),         // Refresh current model
+            fetchCurrentMemoryModel(),   // Refresh memory model
+            fetchCurrentTimezone(),      // Refresh timezone
+            fetchPersonaDetails(),       // Refresh persona details
+            fetchCoreMemoryPersona(),    // Refresh core memory persona
+            fetchCustomModels(),         // Refresh custom models list
+            fetchMcpMarketplace(),       // Refresh MCP marketplace
+          ]);
+          console.log('All settings data refreshed successfully');
         } else {
           console.error('Failed to switch user:', data.message);
         }
@@ -500,7 +512,18 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     } finally {
       setIsUserDropdownOpen(false);
     }
-  }, [settings.serverUrl, fetchUsers, onCurrentUserChange]);
+  }, [
+    settings.serverUrl,
+    fetchUsers,
+    onCurrentUserChange,
+    fetchCurrentModel,
+    fetchCurrentMemoryModel,
+    fetchCurrentTimezone,
+    fetchPersonaDetails,
+    fetchCoreMemoryPersona,
+    fetchCustomModels,
+    fetchMcpMarketplace
+  ]);
 
   const handleCreateUser = useCallback(async () => {
     if (!settings.serverUrl || !newUserName.trim()) {
@@ -511,15 +534,12 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       const response = await queuedFetch(`${settings.serverUrl}/users/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newUserName.trim() })
+        body: JSON.stringify({ name: newUserName.trim(), set_as_active: true })
       });
 
       if (response.ok) {
         const data = await response.json();
         console.log('User created successfully:', data);
-
-        // Refresh users list
-        await fetchUsers();
 
         // Close modal and reset form
         setShowAddUserModal(false);
@@ -529,13 +549,39 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         if (data.user) {
           onCurrentUserChange(data.user);
         }
+
+        // Refresh all user-specific data for the new user
+        console.log('Refreshing all settings data for new user...');
+        await Promise.all([
+          fetchUsers(),                // Refresh users list
+          fetchCurrentModel(),         // Refresh current model
+          fetchCurrentMemoryModel(),   // Refresh memory model
+          fetchCurrentTimezone(),      // Refresh timezone
+          fetchPersonaDetails(),       // Refresh persona details
+          fetchCoreMemoryPersona(),    // Refresh core memory persona
+          fetchCustomModels(),         // Refresh custom models list
+          fetchMcpMarketplace(),       // Refresh MCP marketplace
+        ]);
+        console.log('All settings data refreshed for new user');
       } else {
         console.error('Failed to create user');
       }
     } catch (error) {
       console.error('Error creating user:', error);
     }
-  }, [settings.serverUrl, newUserName, fetchUsers, onCurrentUserChange]);
+  }, [
+    settings.serverUrl,
+    newUserName,
+    fetchUsers,
+    onCurrentUserChange,
+    fetchCurrentModel,
+    fetchCurrentMemoryModel,
+    fetchCurrentTimezone,
+    fetchPersonaDetails,
+    fetchCoreMemoryPersona,
+    fetchCustomModels,
+    fetchMcpMarketplace
+  ]);
 
   const handleDeleteUser = useCallback(async (user) => {
     if (!settings.serverUrl) {
