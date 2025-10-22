@@ -54,12 +54,12 @@ class SessionManager:
     支持同一用户创建多个独立会话（例如多个浏览器窗口）。
     """
 
-    def __init__(self, session_timeout: int = 3600):
+    def __init__(self, session_timeout: int = 600):
         """
         初始化会话管理器
 
         Args:
-            session_timeout: 会话超时时间（秒），默认1小时
+            session_timeout: 会话超时时间（秒），默认10分钟
         """
         self._sessions: Dict[str, Session] = {}  # session_id -> Session
         self._user_sessions: Dict[str, Set[str]] = {}  # user_id -> set of session_ids
@@ -89,7 +89,7 @@ class SessionManager:
         """定期清理过期会话"""
         try:
             while True:
-                await asyncio.sleep(300)  # 每5分钟清理一次
+                await asyncio.sleep(120)  # 每2分钟清理一次，更积极地清理过期会话
                 await self.cleanup_expired_sessions()
         except asyncio.CancelledError:
             logger.info("会话清理循环已取消")

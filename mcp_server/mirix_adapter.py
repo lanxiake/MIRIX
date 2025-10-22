@@ -242,11 +242,10 @@ class MIRIXAdapter:
                 message = f"请记住以下{memory_type}记忆: {content}"
             
             # 通过 send_message 接口添加记忆
-            # 暂时不传递 user_id 参数，因为它导致 ERROR_RESPONSE_FAILED
             request_data = {
                 "message": message,
-                "memorizing": True
-                # "user_id": user_id  # 暂时注释掉，直到修复用户上下文问题
+                "memorizing": True,
+                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
             }
             
             result = await self._make_request("POST", "/send_message", data=request_data)
@@ -295,8 +294,8 @@ class MIRIXAdapter:
             
             request_data = {
                 "message": message,
-                "memorizing": False  # 搜索时不触发新记忆
-                # "user_id": user_id  # 暂时注释掉，直到修复用户上下文问题
+                "memorizing": False,  # 搜索时不触发新记忆
+                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
             }
             
             result = await self._make_request("POST", "/send_message", data=request_data)
@@ -349,8 +348,8 @@ class MIRIXAdapter:
                 
             request_data = {
                 "message": full_message,
-                "memorizing": False  # 对话时不强制触发记忆，让Agent自行决定
-                # "user_id": user_id  # 暂时注释掉，直到修复用户上下文问题
+                "memorizing": False,  # 对话时不强制触发记忆，让Agent自行决定
+                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
             }
             
             result = await self._make_request("POST", "/send_message", data=request_data)
