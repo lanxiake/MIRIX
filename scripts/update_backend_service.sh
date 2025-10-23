@@ -185,7 +185,7 @@ print_summary() {
     log_info "配置信息:"
     echo "  - 配置文件: ${COMPOSE_FILE}"
     echo "  - 后端地址: http://10.157.152.40:47283"
-    echo "  - 镜像版本: v1.0.8"
+    echo "  - 镜像版本: v1.0.9"
     echo "  - 修复内容: 在 send_message 方法中添加详细日志，追踪请求处理流程"
     echo ""
     log_info "后续操作:"
