@@ -119,7 +119,43 @@ class MIRIXAdapter:
         """确保客户端已初始化"""
         if not self._is_initialized:
             await self.initialize()
-    
+
+    async def get_user_id_from_name(self, username: str) -> Optional[str]:
+        """
+        根据用户名获取用户的数据库 UUID
+
+        Args:
+            username: 用户名
+
+        Returns:
+            Optional[str]: 用户的 UUID，如果不存在返回 None
+        """
+        try:
+            await self._ensure_initialized()
+
+            # 调用后端 API 获取用户列表
+            response = await self.client.get("/users")
+            if response.status_code == 200:
+                data = response.json()
+                users = data.get("users", [])
+
+                # 查找匹配的用户名
+                for user in users:
+                    if user.get("name") == username:
+                        user_id = user.get("id")
+                        logger.debug(f"用户名映射: {username} -> {user_id}")
+                        return user_id
+
+                logger.warning(f"未找到用户名: {username}")
+                return None
+            else:
+                logger.error(f"获取用户列表失败: {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"查询用户ID失败: {e}")
+            return None
+
     async def _make_request(
         self, 
         method: str, 
@@ -218,10 +254,10 @@ class MIRIXAdapter:
     async def add_memory(self, memory_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         添加记忆到 MIRIX 系统
-        
+
         Args:
             memory_data: 记忆数据，包含 content, memory_type, context 等字段
-            
+
         Returns:
             Dict[str, Any]: 添加结果
         """
@@ -229,27 +265,34 @@ class MIRIXAdapter:
             # 验证必需字段
             if "content" not in memory_data:
                 raise ValueError("记忆内容 (content) 是必需的")
-            
+
             memory_type = memory_data.get("memory_type", "semantic")
             content = memory_data.get("content", "")
             context = memory_data.get("context", "")
-            user_id = memory_data.get("user_id", self.config.default_user_id)
-            
+            user_id_or_name = memory_data.get("user_id", self.config.default_user_id)
+
+            # 将用户名映射为 UUID（如果需要）
+            user_id = await self.get_user_id_from_name(user_id_or_name)
+            if not user_id:
+                # 如果映射失败，尝试直接使用原值（可能本身就是 UUID）
+                user_id = user_id_or_name
+                logger.warning(f"用户名映射失败，使用原值: {user_id_or_name}")
+
             # 构建记忆添加消息
             if context:
                 message = f"请记住以下{memory_type}记忆: {content}\n\n上下文: {context}"
             else:
                 message = f"请记住以下{memory_type}记忆: {content}"
-            
+
             # 通过 send_message 接口添加记忆
             request_data = {
                 "message": message,
                 "memorizing": True,
-                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
+                "user_id": user_id  # 传递数据库 UUID
             }
-            
+
             result = await self._make_request("POST", "/send_message", data=request_data)
-            
+
             return {
                 "success": True,
                 "message": "记忆添加成功",
@@ -257,7 +300,7 @@ class MIRIXAdapter:
                 "content": content,
                 "result": result
             }
-            
+
         except Exception as e:
             logger.error(f"添加记忆失败: {e}")
             return {
@@ -270,10 +313,10 @@ class MIRIXAdapter:
     async def search_memory(self, search_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         在记忆系统中搜索相关信息
-        
+
         Args:
             search_data: 搜索数据，包含 query, memory_types, limit 等字段
-            
+
         Returns:
             Dict[str, Any]: 搜索结果
         """
@@ -281,25 +324,32 @@ class MIRIXAdapter:
             query = search_data.get("query", "")
             if not query:
                 raise ValueError("搜索查询 (query) 是必需的")
-            
+
             memory_types = search_data.get("memory_types", [])
             limit = search_data.get("limit", 10)
-            user_id = search_data.get("user_id", self.config.default_user_id)
-            
+            user_id_or_name = search_data.get("user_id", self.config.default_user_id)
+
+            # 将用户名映射为 UUID（如果需要）
+            user_id = await self.get_user_id_from_name(user_id_or_name)
+            if not user_id:
+                # 如果映射失败，尝试直接使用原值（可能本身就是 UUID）
+                user_id = user_id_or_name
+                logger.warning(f"用户名映射失败，使用原值: {user_id_or_name}")
+
             # 构建搜索消息 - 使用MIRIX后端能理解的方式
             if memory_types:
                 message = f"请搜索我在{', '.join(memory_types)}记忆中关于'{query}'的相关信息"
             else:
                 message = f"请搜索我的记忆中关于'{query}'的相关信息，并告诉我你找到了什么"
-            
+
             request_data = {
                 "message": message,
                 "memorizing": False,  # 搜索时不触发新记忆
-                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
+                "user_id": user_id  # 传递数据库 UUID
             }
-            
+
             result = await self._make_request("POST", "/send_message", data=request_data)
-            
+
             return {
                 "success": True,
                 "query": query,
@@ -307,7 +357,7 @@ class MIRIXAdapter:
                 "limit": limit,
                 "results": result
             }
-            
+
         except Exception as e:
             logger.error(f"搜索记忆失败: {e}")
             return {
@@ -320,10 +370,10 @@ class MIRIXAdapter:
     async def chat_with_memory(self, chat_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         基于记忆进行对话
-        
+
         Args:
             chat_data: 对话数据，包含 message, context, use_memory 等字段
-            
+
         Returns:
             Dict[str, Any]: 对话结果
         """
@@ -331,29 +381,36 @@ class MIRIXAdapter:
             message = chat_data.get("message", "")
             if not message:
                 raise ValueError("对话消息 (message) 是必需的")
-            
+
             context = chat_data.get("context", "")
             use_memory = chat_data.get("use_memory", True)
-            user_id = chat_data.get("user_id", self.config.default_user_id)
-            
+            user_id_or_name = chat_data.get("user_id", self.config.default_user_id)
+
+            # 将用户名映射为 UUID（如果需要）
+            user_id = await self.get_user_id_from_name(user_id_or_name)
+            if not user_id:
+                # 如果映射失败，尝试直接使用原值（可能本身就是 UUID）
+                user_id = user_id_or_name
+                logger.warning(f"用户名映射失败，使用原值: {user_id_or_name}")
+
             # 构建对话请求 - 移除不支持的参数
             if context:
                 full_message = f"上下文: {context}\n\n{message}"
             else:
                 full_message = message
-            
+
             # 检查消息长度，避免可能导致超时的长消息
             if len(full_message) > 200:
                 full_message = full_message[:200] + "..."
-                
+
             request_data = {
                 "message": full_message,
                 "memorizing": False,  # 对话时不强制触发记忆，让Agent自行决定
-                "user_id": user_id  # 传递用户ID以确保正确的用户上下文
+                "user_id": user_id  # 传递数据库 UUID
             }
-            
+
             result = await self._make_request("POST", "/send_message", data=request_data)
-            
+
             return {
                 "success": True,
                 "message": message,
@@ -361,11 +418,11 @@ class MIRIXAdapter:
                 "use_memory": use_memory,
                 "response": result
             }
-            
+
         except Exception as e:
             error_msg = str(e)
             logger.error(f"记忆对话失败: {e}")
-            
+
             # 如果是超时错误，提供特殊处理
             if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
                 return {
