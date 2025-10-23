@@ -1403,6 +1403,9 @@ class LocalClient(AbstractClient):
         else:
             raise ValueError(f"Invalid message type: {type(message)}")
 
+        self.logger.info(f"========== client.send_message 准备调用 server.send_messages ==========")
+        self.logger.info(f"agent_id={agent_id}, user_id={user_id}, force_response={force_response}")
+
         usage = self.server.send_messages(
             actor=self.server.user_manager.get_user_by_id(self.user.id),
             agent_id=agent_id,
@@ -1417,13 +1420,17 @@ class LocalClient(AbstractClient):
             user_id=user_id,
         )
 
+        self.logger.info(f"server.send_messages 返回，usage={usage}")
+
         # format messages
         messages = self.interface.to_list()
+        self.logger.info(f"interface.to_list() 返回 {len(messages)} 条消息")
 
         mirix_messages = []
         for m in messages:
             mirix_messages += m.to_mirix_message()
 
+        self.logger.info(f"最终返回 {len(mirix_messages)} 条 MirixMessage")
         return MirixResponse(messages=mirix_messages, usage=usage)
 
     def user_message(self, agent_id: str, message: str) -> MirixResponse:

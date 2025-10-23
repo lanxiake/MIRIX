@@ -2,6 +2,9 @@ import threading
 import time
 import traceback
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MessageQueue:
@@ -27,7 +30,11 @@ class MessageQueue:
         Returns:
             Tuple of (response, agent_type)
         """
+        logger.info(f"========== send_message_in_queue 开始 ==========")
+        logger.info(f"agent_id={agent_id}, agent_type={agent_type}")
+
         message_uuid = uuid.uuid4()
+        logger.info(f"分配消息 UUID: {message_uuid}")
 
         with self._message_queue_lock:
             self.message_queue[message_uuid] = {
@@ -36,21 +43,35 @@ class MessageQueue:
                 "finished": False,
                 "type": agent_type,
             }
+        logger.info(f"消息已加入队列，当前队列长度: {len(self.message_queue)}")
 
         # Wait for earlier requests of the same type to finish
+        logger.info("检查是否有更早的同类型请求...")
+        wait_count = 0
         while not self._check_if_earlier_requests_are_finished(message_uuid):
             time.sleep(0.1)
+            wait_count += 1
+            if wait_count % 50 == 0:  # 每5秒打印一次
+                logger.info(f"等待更早的请求完成... (已等待 {wait_count * 0.1:.1f} 秒)")
 
+        logger.info("检查完成，开始处理当前请求")
         with self._message_queue_lock:
             self.message_queue[message_uuid]["started"] = True
 
         try:
+            logger.info(f"准备调用 client.send_message，agent_id={agent_id}")
+            logger.info(f"kwargs keys: {list(kwargs.keys())}")
+
             response = client.send_message(
                 agent_id=agent_id,
                 role="user",
                 **self.message_queue[message_uuid]["kwargs"],
             )
+
+            logger.info(f"client.send_message 返回成功，response type: {type(response)}")
         except Exception as e:
+            logger.error(f"client.send_message 调用失败: {e}")
+            logger.error(f"异常堆栈: {traceback.format_exc()}")
             print(f"Error sending message: {e}")
             print(traceback.format_exc())
             print(
@@ -62,6 +83,7 @@ class MessageQueue:
             self.message_queue[message_uuid]["finished"] = True
             del self.message_queue[message_uuid]
 
+        logger.info(f"send_message_in_queue 完成，返回 response")
         return response, agent_type
 
     def _check_if_earlier_requests_are_finished(self, message_uuid):

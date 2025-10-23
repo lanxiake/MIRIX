@@ -980,13 +980,16 @@ class SyncServer(Server):
         user_id: Optional[str] = None,
     ) -> MirixUsageStatistics:
         """Send a list of messages to the agent."""
+        logger.info(f"========== server.send_messages 开始 ==========")
+        logger.info(f"agent_id={agent_id}, user_id={user_id}, force_response={force_response}, chaining={chaining}")
 
         # Store metadata in interface if provided
         if metadata and hasattr(interface, "metadata"):
             interface.metadata = metadata
 
         # Run the agent state forward
-        return self._step(
+        logger.info("准备调用 self._step...")
+        usage = self._step(
             actor=actor,
             agent_id=agent_id,
             input_messages=input_messages,
@@ -1002,6 +1005,8 @@ class SyncServer(Server):
             retrieved_memories=retrieved_memories,
             user_id=user_id,
         )
+        logger.info(f"self._step 返回，usage={usage}")
+        return usage
 
     # @LockingServer.agent_lock_decorator
     def run_command(
