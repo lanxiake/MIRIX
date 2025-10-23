@@ -7,6 +7,9 @@
 
 set -e  # 遇到错误立即退出
 
+# 默认使用 docker-compose.yml，可通过参数指定其他配置文件
+COMPOSE_FILE="${1:-docker-compose.yml}"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,12 +42,17 @@ print_separator() {
 # 检查是否在正确的目录
 check_directory() {
     log_info "检查当前目录..."
-    if [ ! -f "docker-compose.yml" ]; then
-        log_error "未找到 docker-compose.yml 文件"
+    log_info "使用配置文件: ${COMPOSE_FILE}"
+
+    if [ ! -f "${COMPOSE_FILE}" ]; then
+        log_error "未找到 ${COMPOSE_FILE} 文件"
         log_error "请确保在 /opt/MIRIX 目录下运行此脚本"
+        log_error "用法: ./scripts/update_backend_service.sh [docker-compose文件]"
+        log_error "示例: ./scripts/update_backend_service.sh docker-compose.test.yml"
         exit 1
     fi
     log_success "目录检查通过: $(pwd)"
+    log_success "配置文件检查通过: ${COMPOSE_FILE}"
 }
 
 # 拉取最新代码
@@ -108,12 +116,12 @@ stop_old_container() {
     log_info "步骤 3/5: 停止并移除旧的后端容器..."
 
     # 检查容器是否存在
-    if docker-compose ps mirix-backend | grep -q "mirix-backend"; then
+    if docker-compose -f "${COMPOSE_FILE}" ps mirix-backend | grep -q "mirix-backend"; then
         log_info "停止后端容器..."
-        docker-compose stop mirix-backend
+        docker-compose -f "${COMPOSE_FILE}" stop mirix-backend
 
         log_info "移除后端容器..."
-        docker-compose rm -f mirix-backend
+        docker-compose -f "${COMPOSE_FILE}" rm -f mirix-backend
         log_success "旧容器已停止并移除"
     else
         log_warning "未找到运行中的后端容器"
@@ -125,8 +133,8 @@ start_new_container() {
     print_separator
     log_info "步骤 4/5: 启动新的后端容器..."
 
-    log_info "执行 docker-compose up -d mirix-backend..."
-    if docker-compose up -d mirix-backend; then
+    log_info "执行 docker-compose -f ${COMPOSE_FILE} up -d mirix-backend..."
+    if docker-compose -f "${COMPOSE_FILE}" up -d mirix-backend; then
         log_success "后端容器启动成功"
     else
         log_error "后端容器启动失败"
@@ -139,7 +147,7 @@ start_new_container() {
 
     # 检查容器状态
     log_info "检查容器状态..."
-    docker-compose ps mirix-backend
+    docker-compose -f "${COMPOSE_FILE}" ps mirix-backend
 }
 
 # 验证服务健康状态
@@ -150,7 +158,7 @@ verify_service() {
     # 检查容器日志
     log_info "最近的容器日志 (最后20行):"
     echo "----------------------------------------"
-    docker-compose logs mirix-backend --tail 20
+    docker-compose -f "${COMPOSE_FILE}" logs mirix-backend --tail 20
     echo "----------------------------------------"
 
     # 检查健康状态
@@ -165,7 +173,7 @@ verify_service() {
         curl -s http://localhost:47283/health | jq . || curl -s http://localhost:47283/health
     else
         log_warning "健康检查失败，但这可能是正常的（服务可能仍在初始化）"
-        log_info "请手动检查日志: docker-compose logs -f mirix-backend"
+        log_info "请手动检查日志: docker-compose -f ${COMPOSE_FILE} logs -f mirix-backend"
     fi
 }
 
@@ -174,18 +182,19 @@ print_summary() {
     print_separator
     log_success "后端服务更新完成!"
     echo ""
-    log_info "服务信息:"
+    log_info "配置信息:"
+    echo "  - 配置文件: ${COMPOSE_FILE}"
     echo "  - 后端地址: http://10.157.152.40:47283"
     echo "  - 镜像版本: v1.0.8"
     echo "  - 修复内容: 在 send_message 方法中添加详细日志，追踪请求处理流程"
     echo ""
     log_info "后续操作:"
     echo "  1. 从前端发送测试消息: \"我的名字叫做toolan\""
-    echo "  2. 观察后端日志: docker-compose logs -f mirix-backend"
+    echo "  2. 观察后端日志: docker-compose -f ${COMPOSE_FILE} logs -f mirix-backend"
     echo "  3. 验证核心记忆是否成功保存"
     echo ""
     log_info "如果遇到问题，请查看完整日志:"
-    echo "  docker-compose logs mirix-backend --tail 100"
+    echo "  docker-compose -f ${COMPOSE_FILE} logs mirix-backend --tail 100"
     print_separator
 }
 
@@ -194,7 +203,8 @@ main() {
     echo ""
     print_separator
     log_info "开始更新 MIRIX 后端服务..."
-    log_info "脚本版本: 1.0.0"
+    log_info "脚本版本: 1.1.0"
+    log_info "配置文件: ${COMPOSE_FILE}"
     log_info "执行时间: $(date '+%Y-%m-%d %H:%M:%S')"
     print_separator
     echo ""
