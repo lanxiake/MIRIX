@@ -1921,6 +1921,9 @@ Please perform this analysis and create new memories as appropriate. Provide a d
         is_screen_monitoring=False,
         user_id=None,
     ):
+        self.logger.info(f"========== send_message 开始执行 ==========")
+        self.logger.info(f"参数: message={message[:50] if isinstance(message, str) else type(message)}..., memorizing={memorizing}, user_id={user_id}")
+
         # Check if Gemini features are required but not available
         if self.model_name in GEMINI_MODELS and not self.is_gemini_client_initialized():
             if images is not None or image_uris is not None or voice_files is not None:
@@ -1935,6 +1938,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                     return "Error: Gemini API key required for image/voice features. Please configure it in the settings."
 
         if memorizing:
+            self.logger.info("进入 memorizing 模式...")
             # Validate that at least some content is provided for memorization
             if (
                 message is None
@@ -1994,7 +1998,9 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                 self.clear_old_screenshots()
 
         else:
+            self.logger.info("进入正常聊天模式...")
             if image_uris is not None:
+                self.logger.info(f"处理 {len(image_uris)} 个图片...")
                 if isinstance(message, str):
                     message = [{"type": "text", "text": message}]
                 for image_uri in image_uris:
@@ -2094,6 +2100,9 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                 extra_messages = None
 
             # get the response according to the message
+            self.logger.info("准备调用 message_queue.send_message_in_queue...")
+            self.logger.info(f"agent_id={self.agent_states.agent_state.id}, user_id={user_id}, agent_type=chat")
+
             response, _ = self.message_queue.send_message_in_queue(
                 self.client,
                 self.agent_states.agent_state.id,
@@ -2108,6 +2117,8 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                 },
                 agent_type="chat",
             )
+
+            self.logger.info(f"message_queue.send_message_in_queue 返回: response type={type(response)}")
 
             # Check if response is an error string
             if response == "ERROR":
