@@ -1,0 +1,11 @@
+agent_name: mirix
+model_name: deepseek-chat
+model_endpoint: https://api.deepseek.com/v1
+api_key: sk-d44f718f3df9410ba5fd8e6164646777
+model_provider: openai-compatible
+model_endpoint_type: openai
+generation_config:
+  temperature: 1.0
+  max_tokens: 8192
+  context_window: 64000
+
