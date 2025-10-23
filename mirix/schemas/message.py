@@ -1097,9 +1097,10 @@ class Message(BaseMessage):
 
         elif self.role == "user":
             if not all([v is not None for v in [contents, self.role]]):
-                import ipdb
-
-                ipdb.set_trace()
+                # Log error for debugging instead of using ipdb
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Invalid message state: {vars(self)}")
 
             assert all([v is not None for v in [contents, self.role]]), vars(self)
             google_ai_message = {
