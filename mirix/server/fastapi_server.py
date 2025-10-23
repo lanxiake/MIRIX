@@ -809,21 +809,29 @@ async def send_message_endpoint(request: MessageRequest):
 @app.post("/send_streaming_message")
 async def send_streaming_message_endpoint(request: MessageRequest):
     """Send a message to the agent and stream intermediate messages and final response"""
+    logger.info(f"========== 收到 /send_streaming_message 请求 ==========")
+    logger.info(f"请求内容: message={request.message[:100] if request.message else None}..., user_id={request.user_id}, memorizing={request.memorizing}")
+
     if agent is None:
+        logger.error("Agent 未初始化")
         raise HTTPException(status_code=500, detail="Agent not initialized")
 
     # Register tools for restored MCP connections (one-time only)
     global _mcp_tools_registered
     if not _mcp_tools_registered:
+        logger.info("首次请求，注册 MCP 工具")
         register_mcp_tools_for_restored_connections()
         _mcp_tools_registered = True
 
     # Check for missing API keys
+    logger.info("检查 API keys...")
     api_key_check = check_missing_api_keys(agent)
     if "error" in api_key_check:
+        logger.error(f"API key 检查失败: {api_key_check['error']}")
         raise HTTPException(status_code=500, detail=api_key_check["error"][0])
 
     if api_key_check["missing_keys"]:
+        logger.warning(f"缺少 API keys: {api_key_check['missing_keys']}")
         # Return a special SSE event for missing API keys
         async def missing_keys_response():
             yield f"data: {json.dumps({'type': 'missing_api_keys', 'missing_keys': api_key_check['missing_keys'], 'model_type': api_key_check['model_type']})}\n\n"
@@ -838,6 +846,7 @@ async def send_streaming_message_endpoint(request: MessageRequest):
             },
         )
 
+    logger.info("API keys 检查通过，更新系统提示词...")
     agent.update_chat_agent_system_prompt(request.is_screen_monitoring)
 
     # Create a queue to collect intermediate messagess
@@ -882,30 +891,41 @@ async def send_streaming_message_endpoint(request: MessageRequest):
 
     async def generate_stream():
         """Generator function for streaming responses"""
+        logger.info("开始生成流式响应...")
         try:
             # Start the agent processing in a separate thread
             result_queue = queue.Queue()
 
             async def run_agent():
+                logger.info("run_agent 开始执行...")
                 try:
                     # Get user from request or find the current active user
                     target_user = None
                     if request.user_id:
+                        logger.info(f"尝试通过 user_id 查找用户: {request.user_id}")
                         try:
                             target_user = agent.client.server.user_manager.get_user_by_id(request.user_id)
-                        except Exception:
-                            logger.warning(f"指定的用户 {request.user_id} 不存在，使用活跃用户")
-                    
+                            logger.info(f"找到用户: {target_user.name} (ID: {target_user.id})")
+                        except Exception as e:
+                            logger.warning(f"指定的用户 {request.user_id} 不存在: {e}，使用活跃用户")
+
                     if not target_user:
+                        logger.info("从用户列表中查找活跃用户...")
                         users = agent.client.server.user_manager.list_users()
                         active_user = next(
                             (user for user in users if user.status == "active"), None
                         )
                         target_user = active_user if active_user else None
-                    
+                        if target_user:
+                            logger.info(f"使用活跃用户: {target_user.name} (ID: {target_user.id})")
+                        else:
+                            logger.warning("未找到任何活跃用户")
+
                     current_user_id = target_user.id if target_user else None
+                    logger.info(f"最终使用的 user_id: {current_user_id}")
 
                     # Run agent.send_message in a background thread to avoid blocking
+                    logger.info("准备调用 agent.send_message...")
                     loop = asyncio.get_event_loop()
                     response = await loop.run_in_executor(
                         None,  # Use default ThreadPoolExecutor
@@ -921,6 +941,7 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                             user_id=current_user_id,
                         ),
                     )
+                    logger.info(f"agent.send_message 执行完成，返回类型: {type(response)}")
                     # Handle various response cases
                     if response is None:
                         if request.memorizing:
@@ -1015,11 +1036,14 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                         result_queue.put({"type": "final", "response": response})
 
                 except Exception as e:
+                    logger.error(f"run_agent 中发生异常: {str(e)}")
+                    logger.error(f"异常堆栈: {traceback.format_exc()}")
                     print(f"[DEBUG] Exception in run_agent: {str(e)}")
                     print(f"Traceback: {traceback.format_exc()}")
                     result_queue.put({"type": "error", "error": str(e)})
 
             # Start agent processing as async task
+            logger.info("创建 agent 异步任务...")
             agent_task = asyncio.create_task(run_agent())
 
             # Keep track of whether we've sent the final result
@@ -1070,10 +1094,13 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                     yield f"data: {json.dumps({'type': 'error', 'error': 'Agent processing timed out'})}\n\n"
 
         except Exception as e:
+            logger.error(f"generate_stream 中发生异常: {str(e)}")
+            logger.error(f"异常堆栈: {traceback.format_exc()}")
             print(f"Traceback: {traceback.format_exc()}")
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
     try:
+        logger.info("返回 StreamingResponse...")
         return StreamingResponse(
             generate_stream(),
             media_type="text/plain",
@@ -1084,6 +1111,8 @@ async def send_streaming_message_endpoint(request: MessageRequest):
             },
         )
     except Exception as e:
+        logger.error(f"send_streaming_message_endpoint 顶层异常: {str(e)}")
+        logger.error(f"异常堆栈: {traceback.format_exc()}")
         print(f"Error in send_streaming_message_endpoint: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Streaming error: {str(e)}")
