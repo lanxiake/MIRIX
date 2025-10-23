@@ -83,7 +83,7 @@ pull_latest_image() {
     log_info "步骤 2/5: 拉取最新后端镜像..."
 
     IMAGE_NAME="10.157.152.192:10443/mirix/backend"
-    TARGET_VERSION="v1.0.6"
+    TARGET_VERSION="v1.0.7"
 
     log_info "拉取镜像: ${IMAGE_NAME}:${TARGET_VERSION}"
     if docker pull "${IMAGE_NAME}:${TARGET_VERSION}"; then
@@ -176,8 +176,8 @@ print_summary() {
     echo ""
     log_info "服务信息:"
     echo "  - 后端地址: http://10.157.152.40:47283"
-    echo "  - 镜像版本: v1.0.6"
-    echo "  - 修复内容: 移除生产代码中的 ipdb 调试断点"
+    echo "  - 镜像版本: v1.0.7"
+    echo "  - 修复内容: 添加详细日志输出，便于排查请求无响应问题"
     echo ""
     log_info "后续操作:"
     echo "  1. 从前端发送测试消息: \"我的名字叫做toolan\""
