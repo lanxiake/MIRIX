@@ -49,16 +49,16 @@ class MIRIXAdapter:
     def __init__(self, config: MCPServerConfig):
         """
         初始化 MIRIX 适配器
-        
+
         Args:
             config: MCP 服务器配置对象
         """
         self.config = config
         self.base_url = config.mirix_backend_url.rstrip('/')
-        self.timeout = 60  # 增加超时时间以支持记忆搜索和复杂操作
+        self.timeout = 600  # 延长超时时间到 10 分钟以支持后端长时间处理
         self.client: Optional[httpx.AsyncClient] = None
         self._is_initialized = False
-        
+
         # 连接状态管理
         self._last_health_check = None
         self._health_check_interval = timedelta(minutes=5)
