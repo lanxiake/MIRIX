@@ -437,6 +437,9 @@ class LocalClient(AbstractClient):
 
         from mirix.server.server import SyncServer
 
+        # 初始化 logger
+        self.logger = logging.getLogger("Mirix.LocalClient")
+
         # set logging levels
         mirix.utils.DEBUG = debug
         logging.getLogger().setLevel(logging.CRITICAL)

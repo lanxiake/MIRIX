@@ -91,7 +91,7 @@ pull_latest_image() {
     log_info "步骤 2/5: 拉取最新后端镜像..."
 
     IMAGE_NAME="10.157.152.192:10443/mirix/backend"
-    TARGET_VERSION="v1.0.8"
+    TARGET_VERSION="v1.0.9"
 
     log_info "拉取镜像: ${IMAGE_NAME}:${TARGET_VERSION}"
     if docker pull "${IMAGE_NAME}:${TARGET_VERSION}"; then
@@ -186,7 +186,7 @@ print_summary() {
     echo "  - 配置文件: ${COMPOSE_FILE}"
     echo "  - 后端地址: http://10.157.152.40:47283"
     echo "  - 镜像版本: v1.0.9"
-    echo "  - 修复内容: 在 send_message 方法中添加详细日志，追踪请求处理流程"
+    echo "  - 修复内容: 在消息队列、客户端和服务端添加详细日志，追踪完整的 LLM 调用流程"
     echo ""
     log_info "后续操作:"
     echo "  1. 从前端发送测试消息: \"我的名字叫做toolan\""
