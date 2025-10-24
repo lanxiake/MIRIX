@@ -59,7 +59,8 @@ services:
       # API密钥（从环境变量或.env文件加载）
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-AIzaSyA0TQIOJ-I-Jq_cs63gqtbtNjgJBixD1tQ}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
 
       # 代理配置（使用宿主机代理）
       HTTP_PROXY: ${HTTP_PROXY:-http://10.157.152.63:7890}

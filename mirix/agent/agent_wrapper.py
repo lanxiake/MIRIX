@@ -111,7 +111,51 @@ class AgentWrapper:
         self.logger.setLevel(logging.INFO)
 
         self.client = create_client()
-        self.client.set_default_llm_config(LLMConfig.default_config("gpt-4o-mini"))
+        
+        # 根据配置文件设置默认 LLM 配置
+        # 优先使用配置文件中的详细配置，否则使用默认配置
+        if agent_config.get("model_endpoint_type") or agent_config.get("model_endpoint"):
+            # 如果配置文件中有详细的模型配置，使用这些配置
+            llm_config_dict = {
+                "model": self.model_name,
+                "model_endpoint_type": agent_config.get("model_endpoint_type", "openai"),
+                "context_window": agent_config.get("generation_config", {}).get("context_window", 32768),
+            }
+            
+            # 添加可选配置
+            if agent_config.get("model_endpoint"):
+                llm_config_dict["model_endpoint"] = agent_config["model_endpoint"]
+            
+            if agent_config.get("generation_config"):
+                gen_config = agent_config["generation_config"]
+                if gen_config.get("temperature") is not None:
+                    llm_config_dict["temperature"] = gen_config["temperature"]
+                if gen_config.get("max_tokens") is not None:
+                    llm_config_dict["max_tokens"] = gen_config["max_tokens"]
+            
+            # API Key 优先从环境变量读取，其次从配置文件读取
+            api_key = None
+            if self.model_name.startswith("deepseek"):
+                api_key = os.getenv("DEEPSEEK_API_KEY") or agent_config.get("api_key")
+            elif self.model_name.startswith("gpt"):
+                api_key = os.getenv("OPENAI_API_KEY") or agent_config.get("api_key")
+            elif self.model_name.startswith("gemini"):
+                api_key = os.getenv("GOOGLE_AI_API_KEY") or agent_config.get("api_key")
+            elif self.model_name.startswith("claude"):
+                api_key = os.getenv("ANTHROPIC_API_KEY") or agent_config.get("api_key")
+            else:
+                # 通用情况，从环境变量或配置文件获取
+                api_key = agent_config.get("api_key")
+            
+            if api_key:
+                llm_config_dict["api_key"] = api_key
+            
+            llm_config = LLMConfig(**llm_config_dict)
+            self.client.set_default_llm_config(llm_config)
+        else:
+            # 使用默认配置
+            self.client.set_default_llm_config(LLMConfig.default_config("gpt-4o-mini"))
+        
         # self.client.set_default_embedding_config(EmbeddingConfig.default_config("text-embedding-3-small"))
         self.client.set_default_embedding_config(
             EmbeddingConfig.default_config("text-embedding-004")
