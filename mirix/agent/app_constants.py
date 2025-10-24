@@ -17,6 +17,10 @@ OPENAI_MODELS = [
     "gpt-5-mini",
     "gpt-5",
 ]
+DEEPSEEK_MODELS = [
+    "deepseek-chat",
+    "deepseek-reasoner",
+]
 
 STUCK_TIMEOUT = 10
 RUNNING_TIMEOUT = 30

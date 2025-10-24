@@ -17,6 +17,7 @@ from mirix import EmbeddingConfig, LLMConfig, create_client
 from mirix.agent.agent_configs import AGENT_CONFIGS
 from mirix.agent.agent_states import AgentStates
 from mirix.agent.app_constants import (
+    DEEPSEEK_MODELS,
     GEMINI_MODELS,
     MAXIMUM_NUM_IMAGES_IN_CLOUD,
     OPENAI_MODELS,
@@ -909,6 +910,8 @@ class AgentWrapper:
             return "anthropic"
         elif model_name in OPENAI_MODELS:
             return "openai"
+        elif model_name in DEEPSEEK_MODELS:
+            return "openai"  # DeepSeek 使用 OpenAI 兼容的 API
         else:
             raise ValueError(f"Invalid model provider: {model_name}")
 

@@ -1191,6 +1191,8 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   };
 
   const baseModels = [
+    'deepseek-chat',
+    'deepseek-reasoner',
     'gpt-4o-mini',
     'gpt-4o',
     'gpt-4.1-mini',
@@ -1208,6 +1210,8 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
 
   // Memory models support both Gemini and OpenAI models, plus custom models
   const baseMemoryModels = [
+    'deepseek-chat',
+    'deepseek-reasoner',
     'gemini-2.0-flash',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
