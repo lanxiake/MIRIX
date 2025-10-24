@@ -1,0 +1,52 @@
+2025-10-24 12:32:56 - 信息: === 构建配置 ===
+2025-10-24 12:32:56 - 信息: 命名空间: mirix
+2025-10-24 12:32:56 - 信息: 版本: latest
+2025-10-24 12:32:56 - 信息: 仓库: 10.157.152.192:10443
+2025-10-24 12:32:56 - 信息: 构建模式: buildx
+2025-10-24 12:32:56 - 信息: 平台: linux/amd64
+2025-10-24 12:32:56 - 信息: 组件: backend
+2025-10-24 12:32:56 - 信息: 推送: 是
+2025-10-24 12:32:56 - 信息: ================
+2025-10-24 12:32:56 - 信息: === Docker 环境诊断 ===
+2025-10-24 12:32:56 - 信息: Docker 版本: 28.3.3
+2025-10-24 12:32:56 - 成功: ✓ Docker Buildx 可用
+2025-10-24 12:32:56 - 信息: 测试仓库连接: 10.157.152.192:10443
+2025-10-24 12:32:56 - 成功: ✓ 仓库连接成功
+2025-10-24 12:32:57 - 信息: === 诊断完成 ===
+2025-10-24 12:32:57 - 信息: 设置多架构构建环境
+2025-10-24 12:32:57 - 信息: 删除现有构建器: mirix-builder
+#1 [internal] booting buildkit
+#1 pulling image moby/buildkit:buildx-stable-1
+#1 pulling image moby/buildkit:buildx-stable-1 6.1s done
+#1 creating container buildx_buildkit_mirix-builder0
+#1 creating container buildx_buildkit_mirix-builder0 0.6s done
+#1 DONE 6.7s
+mirix-builder
+2025-10-24 12:33:04 - 成功: 构建器创建成功: mirix-builder
+2025-10-24 12:33:04 - 信息: 支持的平台:             linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/amd64/v4, linux/386
+2025-10-24 12:33:04 - 信息: 登录到 Docker 仓库: 10.157.152.192:10443
+Login Succeeded
+2025-10-24 12:33:04 - 成功: Docker 仓库登录成功
+2025-10-24 12:33:04 - 信息: 构建 MIRIX 后端服务
+2025-10-24 12:33:04 - 信息: 使用 buildx 构建: 10.157.152.192:10443/mirix/backend:latest (平台: linux/amd64)
+#0 building with "mirix-builder" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile.backend
+#1 transferring dockerfile: 1.27kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.11-slim
+#2 ERROR: failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/3.11-slim": dial tcp 75.126.135.131:443: i/o timeout
+------
+ > [internal] load metadata for docker.io/library/python:3.11-slim:
+------
+Dockerfile.backend:4
+--------------------
+   2 |     # 多阶段构建，优化镜像大小和构建效率
+   3 |     
+   4 | >>> FROM python:3.11-slim AS base
+   5 |     
+   6 |     # 设置工作目录
+--------------------
+ERROR: failed to build: failed to solve: python:3.11-slim: failed to resolve source metadata for docker.io/library/python:3.11-slim: failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/3.11-slim": dial tcp 75.126.135.131:443: i/o timeout
+2025-10-24 12:33:34 - 错误: 镜像构建失败: 10.157.152.192:10443/mirix/backend:latest
