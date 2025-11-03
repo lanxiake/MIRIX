@@ -1,7 +1,7 @@
 # MIRIX MCP Server Dockerfile
 # 提供MCP服务接口，支持SSE传输
 
-FROM 10.157.152.192:10443/mirix/python:3.11-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 

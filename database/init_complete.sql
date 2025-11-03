@@ -404,9 +404,11 @@ COMMENT ON TABLE public.cloud_file_mapping IS '云端和本地文件映射关系
 CREATE TABLE IF NOT EXISTS public.tools (
     id character varying NOT NULL PRIMARY KEY,
     name character varying,
+    tool_type character varying DEFAULT 'custom',
+    return_char_limit integer,
     description character varying,
     tags json,
-    source_type character varying,
+    source_type character varying DEFAULT 'json',
     json_schema json,
     source_code character varying,
     created_at timestamp with time zone DEFAULT now(),
@@ -415,7 +417,8 @@ CREATE TABLE IF NOT EXISTS public.tools (
     _created_by_id character varying,
     _last_updated_by_id character varying,
     organization_id character varying,
-    module character varying
+    module character varying,
+    CONSTRAINT uix_name_organization UNIQUE (name, organization_id)
 );
 
 COMMENT ON TABLE public.tools IS '工具定义表';
@@ -434,7 +437,7 @@ COMMENT ON TABLE public.tools_agents IS '工具和 Agent 多对多关联';
 CREATE TABLE IF NOT EXISTS public.providers (
     id character varying NOT NULL PRIMARY KEY,
     user_id character varying,
-    provider_name character varying,
+    name character varying,
     base_url character varying,
     api_key character varying,
     created_at timestamp with time zone DEFAULT now(),
