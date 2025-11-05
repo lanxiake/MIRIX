@@ -35,4 +35,4 @@ mirix.egg-info
 .local
 venv/
 .spec-workflow/
-venv_mcp/
+venv_mcp/agents.tar
