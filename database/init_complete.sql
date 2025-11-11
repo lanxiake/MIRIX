@@ -202,17 +202,23 @@ CREATE TABLE IF NOT EXISTS public.messages (
     role character varying NOT NULL,
     name character varying,
     text character varying,
+    content json,
     model character varying,
     user_id character varying,
     agent_id character varying,
+    tool_calls json,
+    tool_call_id character varying,
+    step_id character varying,
+    otid character varying,
+    tool_returns json,
+    group_id character varying,
+    sender_id character varying,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     is_deleted boolean DEFAULT false NOT NULL,
     _created_by_id character varying,
     _last_updated_by_id character varying,
-    organization_id character varying,
-    tool_calls json,
-    tool_call_id character varying
+    organization_id character varying
 );
 
 COMMENT ON TABLE public.messages IS '对话消息记录';
@@ -549,6 +555,9 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_messages_user_id ON public.messages(user_id) WHERE NOT is_deleted;
     CREATE INDEX IF NOT EXISTS idx_messages_agent_id ON public.messages(agent_id) WHERE NOT is_deleted;
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON public.messages(created_at) WHERE NOT is_deleted;
+    -- 复合索引，匹配 ORM 模型定义
+    CREATE INDEX IF NOT EXISTS ix_messages_agent_created_at ON public.messages(agent_id, created_at);
+    CREATE INDEX IF NOT EXISTS ix_messages_created_at ON public.messages(created_at, id);
 EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'Messages indexes: % (may not exist or already created)', SQLERRM;
 END $$;
