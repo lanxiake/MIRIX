@@ -41,8 +41,8 @@ class UserSettingsManager:
                     default_settings = UserSettings(
                         id=str(uuid.uuid4()),
                         user_id=user_id,
-                        chat_model="gpt-4o-mini",
-                        memory_model="gemini-2.5-flash-lite",
+                        chat_model="deepseek-chat",
+                        memory_model="deepseek-chat",
                         timezone="America/New_York (UTC-5:00)",
                         persona="helpful_assistant",
                         persona_text=None,
@@ -82,8 +82,8 @@ class UserSettingsManager:
                     settings = UserSettings(
                         id=str(uuid.uuid4()),
                         user_id=user_id,
-                        chat_model="gpt-4o-mini",
-                        memory_model="gemini-2.5-flash-lite",
+                        chat_model="deepseek-chat",
+                        memory_model="deepseek-chat",
                         timezone="America/New_York (UTC-5:00)",
                         persona="helpful_assistant"
                     )

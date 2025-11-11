@@ -202,6 +202,14 @@ class LLMConfig(BaseModel):
                 model_endpoint="https://inference.memgpt.ai",
                 context_window=8192,
             )
+        elif model_name == "deepseek-chat":
+            return cls(
+                model="deepseek-chat",
+                model_endpoint_type="openai",
+                model_endpoint="https://api.deepseek.com/v1",
+                model_wrapper=None,
+                context_window=64000,
+            )
         else:
             raise ValueError(f"Model {model_name} not supported.")
 
